@@ -19,7 +19,7 @@ def _money(value: int | float | None, *, per_m2: bool = False) -> str | None:
     if value is None:
         return None
     if per_m2:
-        return f"{value / 1_000_000:,.1f} triệu VND/m2".replace(",", ".")
+        return f"{value / 1_000_000:,.1f} triệu VND/m²".replace(",", ".")
     return f"{value / 1_000_000_000:,.2f} tỷ VND".replace(",", ".")
 
 
@@ -77,6 +77,39 @@ def _compose_overview(overview: dict) -> tuple[str, list[dict]]:
     else:
         price_stats = stats.get("price_vnd") or {}
 
+    if count == 1:
+        lines = [f"Dạ, hiện hệ thống chỉ có 1 listing của {name}."]
+        if place:
+            lines.append(f"Khu vực: {place}.")
+
+        price = _money((price_stats or {}).get("avg"))
+        if price:
+            lines.append(f"Listing này ghi nhận {price_kind or 'mức giá'} {price}.")
+
+        price_per_m2 = _money(
+            (stats.get("price_per_m2_vnd") or {}).get("avg"), per_m2=True
+        )
+        if price_per_m2:
+            lines.append(f"Đơn giá ghi nhận là {price_per_m2}.")
+
+        area = (stats.get("area_m2") or {}).get("avg")
+        if area is not None:
+            lines.append(f"Diện tích là {area:g} m².")
+
+        beds = stats.get("bedrooms_range") or {}
+        if beds.get("min") is not None:
+            lines.append(f"Listing có {beds['min']} phòng ngủ.")
+
+        top_type = _top_property_type(stats.get("by_property_type") or {})
+        if top_type:
+            lines.append(f"Loại hình ghi nhận là {top_type}.")
+
+        lines.append(
+            "Mẫu dữ liệu hiện chỉ có 1 listing nên chưa đủ để phản ánh mặt bằng "
+            "chung của dự án. Số liệu này không phải thẩm định giá hay khuyến nghị đầu tư."
+        )
+        return " ".join(lines), actions
+
     lines = [f"Dạ, đây là thống kê mô tả từ các listing hiện có của {name}."]
     if place:
         lines.append(f"Khu vực: {place}.")
@@ -99,9 +132,9 @@ def _compose_overview(overview: dict) -> tuple[str, list[dict]]:
 
     ppm2_text = _range_text(stats.get("price_per_m2_vnd") or {}, lambda v: _money(v, per_m2=True))
     if ppm2_text:
-        lines.append(f"Giá trên m2 {ppm2_text}.")
+        lines.append(f"Giá trên m² {ppm2_text}.")
 
-    area_text = _range_text(stats.get("area_m2") or {}, lambda v: f"{v:g} m2" if v is not None else None)
+    area_text = _range_text(stats.get("area_m2") or {}, lambda v: f"{v:g} m²" if v is not None else None)
     if area_text:
         lines.append(f"Diện tích {area_text}.")
 
