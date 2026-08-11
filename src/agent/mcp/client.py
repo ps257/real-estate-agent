@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, Protocol, runtime_checkable
 
 from agent.config import MCPConfig, get_settings
@@ -49,22 +50,36 @@ def _unwrap_tool_result(value: Any) -> Any:
     FastMCP tools return JSON values, but the adapter can wrap a single structured result in
     a one-item list or a structured-content dict. Keep real multi-row listing lists intact.
     """
+    # Adapter versions may return a ToolMessage/Pydantic model rather than
+    # the raw Python value.
+    if not isinstance(value, (dict, list, str)):
+        if hasattr(value, "model_dump"):
+            value = value.model_dump()
+        elif hasattr(value, "content"):
+            value = value.content
+
+    if isinstance(value, str):
+        try:
+            return _unwrap_tool_result(json.loads(value))
+        except (json.JSONDecodeError, TypeError):
+            return value
+
     if isinstance(value, dict):
-        if "structured_content" in value:
-            return value["structured_content"]
-        if "structuredContent" in value:
-            return value["structuredContent"]
+        for key in ("structured_content", "structuredContent"):
+            if value.get(key) is not None:
+                return _unwrap_tool_result(value[key])
+
+        # MCP text content blocks contain the serialized JSON tool result.
+        if value.get("type") == "text" and isinstance(value.get("text"), str):
+            return _unwrap_tool_result(value["text"])
+
+        # ToolMessage.model_dump() keeps the actual payload under content.
+        payload_keys = {"project", "stats", "matched", "candidates"}
+        if "content" in value and not (payload_keys & set(value)):
+            return _unwrap_tool_result(value["content"])
         return value
 
-    if isinstance(value, list) and len(value) == 1 and isinstance(value[0], dict):
-        item = value[0]
-        if "structured_content" in item:
-            return item["structured_content"]
-        if "structuredContent" in item:
-            return item["structuredContent"]
-        if {"matched", "project", "candidates"} & set(item):
-            return item
-        if {"project", "stats"} <= set(item):
-            return item
+    if isinstance(value, list) and len(value) == 1:
+        return _unwrap_tool_result(value[0])
 
     return value

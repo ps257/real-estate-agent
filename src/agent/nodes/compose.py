@@ -130,6 +130,8 @@ async def compose(state: AgentState, ctx: NodeContext) -> dict:
         skill = ctx.skills.by_name(state.get("active_skill") or "")
         prompt = (skill.clarify_prompt if skill else None) or "Dạ anh/chị muốn xem dự án nào ạ?"
         resolved = _result(results, "resolve_project") or {}
+        if not isinstance(resolved, dict):
+            resolved = {}
         suggestions = [
             {"id": p.get("id"), "label": p.get("name") or p.get("id")}
             for p in (resolved.get("candidates") or [])[:3]
@@ -147,6 +149,8 @@ async def compose(state: AgentState, ctx: NodeContext) -> dict:
 
     listings = _result(results, "search_listings") or _result(results, "search_listings_by_province") or []
     ctas = _result(results, "listing_cta_actions") or {}
+    if not isinstance(ctas, dict):
+        ctas = {}
 
     if isinstance(listings, list) and listings:
         actions.append({"type": "cards", "items": listings})
