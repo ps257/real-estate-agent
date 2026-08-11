@@ -57,7 +57,12 @@ async def compose(state: AgentState, ctx: NodeContext) -> dict:
     # Nhánh có kết quả (US1).
     results = state.get("tool_results", [])
     listings = _result(results, "search_listings") or _result(results, "search_listings_by_province") or []
-    ctas = _result(results, "listing_cta_actions") or {}
+    ctas = _result(results, "listing_cta_actions")
+
+    # MCP tool lỗi -> parse_tool_result trả str (thông báo lỗi) thay vì dict/list.
+    # Kiểm tra kiểu trước khi dùng, nếu không một tool hỏng sẽ làm sập cả lượt chat.
+    if not isinstance(ctas, dict):
+        ctas = {}
 
     if isinstance(listings, list) and listings:
         actions.append({"type": "cards", "items": listings})
