@@ -1,6 +1,6 @@
 """Focused tests for US4 response composition."""
 
-from agent.nodes.compose import _compose_overview
+from agent.nodes.compose import _compose_overview, _not_found_prompt
 
 
 def test_single_listing_avoids_fake_range_and_warns_about_sample_size():
@@ -38,3 +38,9 @@ def test_single_listing_avoids_fake_range_and_warns_about_sample_size():
     assert "106.0 triệu VND/m²" in text
     assert "74.2 m²" in text
     assert actions[0]["type"] == "overview"
+
+
+def test_not_found_prompt_explains_what_failed():
+    text = _not_found_prompt("khong co that 123")
+    assert '"khong co that 123"' in text
+    assert "Không tìm thấy dự án" in text

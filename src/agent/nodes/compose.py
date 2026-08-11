@@ -55,6 +55,13 @@ def _top_property_type(by_property_type: dict) -> str | None:
     return f"{labels.get(key, key)} ({count} listing)"
 
 
+def _not_found_prompt(project_query: str) -> str:
+    return (
+        f'Không tìm thấy dự án phù hợp với tên "{project_query}". '
+        "Anh/chị vui lòng kiểm tra lại tên dự án."
+    )
+
+
 def _compose_overview(overview: dict) -> tuple[str, list[dict]]:
     project = overview.get("project") or {}
     stats = overview.get("stats") or {}
@@ -165,6 +172,14 @@ async def compose(state: AgentState, ctx: NodeContext) -> dict:
         resolved = _result(results, "resolve_project") or {}
         if not isinstance(resolved, dict):
             resolved = {}
+        project_query = (state.get("slots") or {}).get("project_query")
+        not_found = bool(
+            project_query
+            and not resolved.get("matched")
+            and not resolved.get("candidates")
+        )
+        if not_found:
+            prompt = _not_found_prompt(project_query)
         suggestions = [
             {"id": p.get("id"), "label": p.get("name") or p.get("id")}
             for p in (resolved.get("candidates") or [])[:3]

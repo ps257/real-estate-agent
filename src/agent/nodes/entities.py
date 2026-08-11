@@ -17,16 +17,54 @@ def _fold(text: str) -> str:
 def _clean_project_query(text: str) -> str:
     folded = _fold(text)
     folded = re.sub(r"[?!.:,;]+", " ", folded)
-    folded = re.sub(
-        r"\b("
-        r"hay|giup|minh|toi|cho|em|anh|chi|nhe|nha|a|"
-        r"du an|phan tich|tong quan|thong ke|thi truong|gia|"
-        r"gia trung binh|gia tren m2|gia/m2|bao nhieu listing|so luong listing|"
-        r"loai hinh|dien tich trung binh|cua|ve|cho toi|cho minh"
-        r")\b",
-        " ",
-        folded,
+
+    phrases = (
+        "bao nhieu listing",
+        "so luong listing",
+        "dien tich trung binh",
+        "mat bang gia",
+        "gia trung binh",
+        "gia tren m2",
+        "gia hien nay",
+        "tinh hinh gia",
+        "phan tich",
+        "tong quan",
+        "thong ke",
+        "thi truong",
+        "muc gia",
+        "don gia",
+        "loai hinh",
+        "dien tich",
+        "gia/m2",
+        "du an",
+        "cho toi",
+        "cho minh",
+        "the nao",
     )
+    for phrase in phrases:
+        folded = re.sub(rf"\b{re.escape(phrase)}\b", " ", folded)
+
+    filler_words = (
+        "hay",
+        "giup",
+        "minh",
+        "toi",
+        "cho",
+        "em",
+        "anh",
+        "chi",
+        "nhe",
+        "nha",
+        "a",
+        "gia",
+        "cua",
+        "ve",
+        "xem",
+        "hien",
+        "o",
+        "va",
+    )
+    folded = re.sub(rf"\b({'|'.join(filler_words)})\b", " ", folded)
     return re.sub(r"\s+", " ", folded).strip()
 
 
