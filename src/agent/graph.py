@@ -26,6 +26,11 @@ from agent.skills.loader import SkillRegistry
 from agent.state import AgentState
 
 
+def _route_after_normalize(state: AgentState) -> str:
+    """Conditional edge: guardrail chặn → compose (từ chối); hợp lệ → intent."""
+    return "compose" if state.get("guardrail") else "intent"
+
+
 def _route_after_conversation(state: AgentState) -> str:
     """Conditional edge: thiếu slot → hỏi lại (compose); đủ → gọi tool."""
     return "compose" if state.get("needs_clarification") else "tools"
@@ -53,7 +58,11 @@ def build_graph(
     g.add_node("compose", partial(compose, ctx=ctx))
 
     g.add_edge(START, "normalize")
-    g.add_edge("normalize", "intent")
+    g.add_conditional_edges(
+        "normalize",
+        _route_after_normalize,
+        {"intent": "intent", "compose": "compose"},
+    )
     g.add_edge("intent", "entities")
     g.add_edge("entities", "conversation")
     g.add_conditional_edges(

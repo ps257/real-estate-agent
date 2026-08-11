@@ -33,6 +33,19 @@ async def compose(state: AgentState, ctx: NodeContext) -> dict:
     cot = list(state.get("cot", []))
     actions: list[dict] = []
 
+    # Nhánh guardrail: input out-of-scope -> từ chối lịch sự + gợi ý lối đi khác.
+    # Node normalize đã soạn sẵn message; đến đây chỉ đóng gói thành action.
+    guardrail = state.get("guardrail")
+    if guardrail:
+        message = guardrail["message"]
+        actions.append({
+            "type": "clarify",
+            "prompt": message,
+            "suggestions": guardrail.get("suggestions", []),
+        })
+        cot.append(f"compose: từ chối theo guardrail '{guardrail['code']}'")
+        return {"response_text": message, "actions": actions, "cot": cot}
+
     # Nhánh clarify: thiếu slot -> hỏi lại kèm gợi ý.
     if state.get("needs_clarification"):
         skill = ctx.skills.by_name(state.get("active_skill") or "")

@@ -21,6 +21,10 @@ class AgentState(TypedDict, total=False):
     user_input: str
     normalized_input: str  # sau normalize/guardrail
 
+    # Guardrail: None = hợp lệ. dict {code, message, suggestions} = out-of-scope
+    # (PRD mục "Out of scope") -> graph rẽ thẳng normalize → compose.
+    guardrail: dict[str, Any] | None
+
     # Hiểu ý định & thực thể.
     intent: str | None          # vd "US1_SEARCH"
     entities: dict[str, Any]     # thực thể trích được
@@ -45,6 +49,7 @@ def new_state(user_input: str, thread_id: str) -> AgentState:
         thread_id=thread_id,
         user_input=user_input,
         normalized_input=user_input,
+        guardrail=None,
         intent=None,
         entities={},
         slots={},
