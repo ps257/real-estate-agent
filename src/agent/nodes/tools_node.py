@@ -1,82 +1,261 @@
-"""Node: Tool Calling Layer.  [DONE cho US1 — mở rộng cho US khác]
+"""Node: Tool Calling Layer.  [DONE]
 
-PRD bước 5. Gọi MCP tool nằm trong allow-list của skill (skill.tools).
+PRD bước 5. Gọi MCP tool nằm trong allow-list của skill (``skill.tools``).
 
-Scaffold triển khai đầy đủ nhánh US1_SEARCH để pipeline chạy end-to-end với MCP
-(hoặc MCP mock trong test). Các US khác: theo mẫu này.
+Mỗi intent có một handler riêng, tra trong ``_HANDLERS``. Thêm intent mới =
+thêm một hàm + một dòng trong bảng, không đụng ``call_tools``.
+
+Node này KHÔNG dùng LLM: intent quyết định gọi tool nào, slots quyết định truyền
+tham số gì. Cả hai đã do các node trước lo. Giữ thuần cơ học như vậy để luồng
+tường minh, đo được, và allow-list mới có ý nghĩa ràng buộc thật.
 """
 
 from __future__ import annotations
 
-from typing import Any
+import logging
+from typing import Any, Awaitable, Callable
 
 from agent.nodes.context import NodeContext
 from agent.state import AgentState
 
+logger = logging.getLogger(__name__)
 
-async def _guarded_call(
-    ctx: NodeContext,
-    skill_tools: list[str],
-    name: str,
-    args: dict[str, Any],
-) -> Any:
-    """Chỉ cho gọi tool nằm trong allow-list của skill (an toàn + dễ chấm)."""
-    if name not in skill_tools:
-        raise PermissionError(f"Tool {name!r} khong nam trong allow-list skill: {skill_tools}")
-    return await ctx.mcp.call_tool(name, args)
+# Slot chuyển thẳng thành tham số lọc của search_listings*. Tên slot == tên
+# tham số MCP (xem entities_llm.ExtractedEntities), nên không phải map lại.
+_SEARCH_FILTERS = (
+    "property_type",
+    "bedrooms",
+    "min_bedrooms",
+    "max_bedrooms",
+    "min_price_vnd",
+    "max_price_vnd",
+    "min_area_m2",
+    "max_area_m2",
+)
+
+_MAX_SUGGESTIONS = 3
+
+
+class _ToolRun:
+    """Gom việc gọi tool + ghi lại call/result, để handler đọc cho gọn.
+
+    ``calls`` và ``results`` được giữ ĐỒNG CHỈ SỐ — runner.py ghép ``calls[i]``
+    với ``results[i]`` khi phát SSE event.
+    """
+
+    def __init__(self, ctx: NodeContext, allow: list[str]) -> None:
+        self._ctx = ctx
+        self._allow = allow
+        self.calls: list[dict] = []
+        self.results: list[dict] = []
+        self.cot: list[str] = []
+
+    async def call(self, name: str, args: dict[str, Any]) -> Any:
+        """Gọi tool, chặn nếu ngoài allow-list của skill."""
+        if name not in self._allow:
+            raise PermissionError(
+                f"Tool {name!r} khong nam trong allow-list skill: {self._allow}"
+            )
+        result = await self._ctx.mcp.call_tool(name, args)
+        self.calls.append({"name": name, "args": args})
+        self.results.append({"name": name, "result": result})
+        return result
+
+
+def _search_filters(slots: dict) -> dict:
+    """Lọc slot thành tham số cho search_listings / search_listings_by_province."""
+    return {k: slots[k] for k in _SEARCH_FILTERS if slots.get(k) is not None}
+
+
+def _suggestions_from(candidates: list[dict]) -> list[dict]:
+    """Ứng viên dự án -> nút bấm. Cùng shape với conversation._candidate_suggestions."""
+    out = []
+    for cand in candidates[:_MAX_SUGGESTIONS]:
+        name = cand.get("name")
+        if not name:
+            continue
+        province = cand.get("province")
+        out.append({
+            "label": f"{name} — {province}" if province else name,
+            "value": name,
+            "project_id": cand.get("id"),
+        })
+    return out
+
+
+# ============================================================ handlers
+# Chữ ký chung: (run, slots, state) -> dict | None
+# Trả dict = ghi đè thêm vào state (dùng để yêu cầu hỏi lại). None = bình thường.
+
+async def _us1_search(run: _ToolRun, slots: dict, state: AgentState) -> dict | None:
+    """US1 — tra cứu theo dự án hoặc tỉnh, kèm CTA."""
+    term = slots.get("project_or_province", "")
+    filters = _search_filters(slots)
+
+    resolved = await run.call("resolve_project", {"text": term})
+    matched = isinstance(resolved, dict) and resolved.get("matched")
+    candidates = resolved.get("candidates") or [] if isinstance(resolved, dict) else []
+
+    if matched:
+        listings = await run.call(
+            "search_listings",
+            {"project_id": resolved["project"]["id"], "limit": 10, **filters},
+        )
+    elif candidates:
+        # Tên mơ hồ ("Vinhomes" khớp 5 dự án). search-real-estate.md quy định:
+        # hiện tối đa 3 ứng viên cho khách chọn, KHÔNG đoán bừa. Trước đây nhánh
+        # này rơi xuống search_listings_by_province(province="Vinhomes") — sai
+        # nghiệp vụ vì tên dự án không phải tên tỉnh, và luôn trả rỗng.
+        run.cot.append(f"tools: '{term}' khớp {len(candidates)} dự án -> hỏi lại")
+        return {
+            "needs_clarification": True,
+            "clarify": {
+                "prompt": f'Dạ có nhiều dự án khớp với "{term}". '
+                          "Anh/chị chọn giúp em dự án nào ạ?",
+                "suggestions": _suggestions_from(candidates),
+            },
+        }
+    else:
+        # Không khớp dự án nào và không có gợi ý -> term có thể là tên tỉnh.
+        listings = await run.call(
+            "search_listings_by_province", {"province": term, "limit": 10, **filters}
+        )
+
+    # CTA cho listing đầu tiên (nếu có).
+    first = listings[0] if isinstance(listings, list) and listings else None
+    if isinstance(first, dict) and first.get("id"):
+        await run.call("listing_cta_actions", {"listing_id": first["id"]})
+    return None
+
+
+async def _us2_1_visit(run: _ToolRun, slots: dict, state: AgentState) -> dict | None:
+    """US2.1 — mở form đặt lịch tham quan."""
+    await run.call(
+        "start_visit_booking",
+        {
+            "project_id": slots["project_id"],
+            "is_authenticated": bool(slots.get("is_authenticated", False)),
+        },
+    )
+    return None
+
+
+async def _us2_2_consult(run: _ToolRun, slots: dict, state: AgentState) -> dict | None:
+    """US2.2 — mở form tư vấn mua nhà."""
+    await run.call(
+        "start_consultation",
+        {
+            "project_id": slots["project_id"],
+            "is_authenticated": bool(slots.get("is_authenticated", False)),
+        },
+    )
+    return None
+
+
+async def _us3_policy(run: _ToolRun, slots: dict, state: AgentState) -> dict | None:
+    """US3 — hỏi đáp chính sách (RAG).
+
+    ``answer_project_policy`` đang DISABLED phía MCP (raise ToolError). Bắt lỗi
+    và ghi ``{"available": False}`` để compose trả lời "chưa có trong tài liệu"
+    + đề nghị nối tư vấn viên — đúng yêu cầu hallucination < 1% của PRD: thà
+    từ chối còn hơn bịa.
+    """
+    question = state.get("normalized_input") or state.get("user_input", "")
+    args = {"project_id": slots["project_id"], "question": question}
+    try:
+        await run.call("answer_project_policy", args)
+    except PermissionError:
+        raise  # allow-list là lỗi cấu hình skill, phải lộ ra.
+    except Exception as exc:  # noqa: BLE001 — tool disabled là trạng thái ĐÃ BIẾT.
+        logger.info("US3: answer_project_policy không dùng được: %s", exc)
+        run.calls.append({"name": "answer_project_policy", "args": args})
+        run.results.append({
+            "name": "answer_project_policy",
+            "result": {"available": False, "reason": str(exc)[:200]},
+        })
+        run.cot.append("tools: RAG chưa bật -> trả lời 'chưa có trong tài liệu'")
+    return None
+
+
+async def _us4_analytics(run: _ToolRun, slots: dict, state: AgentState) -> dict | None:
+    """US4 — tổng quan dự án."""
+    await run.call("project_overview", {"project_id": slots["project_id"]})
+    return None
+
+
+async def _us5_map(run: _ToolRun, slots: dict, state: AgentState) -> dict | None:
+    """US5 — bản đồ căn hộ."""
+    await run.call(
+        "map_listings",
+        {
+            "project_id": slots["project_id"],
+            "include_amenities": bool(slots.get("include_amenities", False)),
+        },
+    )
+    return None
+
+
+async def _us6_compare(run: _ToolRun, slots: dict, state: AgentState) -> dict | None:
+    """US6 — so sánh 2-4 căn."""
+    listing_ids = slots.get("listing_ids") or []
+    if len(listing_ids) < 2:
+        run.cot.append(f"tools: chỉ có {len(listing_ids)} căn -> cần ít nhất 2")
+        return {
+            "needs_clarification": True,
+            "clarify": {
+                "prompt": "Dạ anh/chị muốn so sánh những căn nào ạ? "
+                          "Em cần ít nhất 2 căn để so sánh.",
+                "suggestions": [],
+            },
+        }
+    # MCP giới hạn 2-4; cắt bớt còn hơn để tool trả lỗi.
+    await run.call("compare_listings", {"listing_ids": listing_ids[:4]})
+    return None
+
+
+_HANDLERS: dict[str, Callable[[_ToolRun, dict, AgentState], Awaitable[dict | None]]] = {
+    "US1_SEARCH": _us1_search,
+    "US2_1_VISIT": _us2_1_visit,
+    "US2_2_CONSULT": _us2_2_consult,
+    "US3_POLICY": _us3_policy,
+    "US4_ANALYTICS": _us4_analytics,
+    "US5_MAP": _us5_map,
+    "US6_COMPARE": _us6_compare,
+}
 
 
 async def call_tools(state: AgentState, ctx: NodeContext) -> dict:
     """
     INPUT  : ``intent``, ``active_skill``, ``slots``.
     OUTPUT : ``tool_calls`` [{name,args}] + ``tool_results`` [{name,result}].
+             Có thể thêm ``needs_clarification``/``clarify`` khi tool phát hiện
+             cần hỏi lại (vd tên dự án mơ hồ) — compose sẽ đọc và hỏi.
 
     Chỉ chạy khi conversation cho đủ slot (needs_clarification=False).
     """
     skill = ctx.skills.by_name(state.get("active_skill") or "")
-    allow = skill.tools if skill else []
-    slots = state.get("slots", {})
-    intent = state.get("intent")
-
-    calls: list[dict] = []
-    results: list[dict] = []
+    intent = state.get("intent") or ""
+    slots = state.get("slots") or {}
     cot = list(state.get("cot", []))
 
-    if intent == "US1_SEARCH":
-        term = slots.get("project_or_province", "")
-        # 1) resolve xem term có phải dự án đã biết không.
-        resolved = await _guarded_call(ctx, allow, "resolve_project", {"text": term})
-        calls.append({"name": "resolve_project", "args": {"text": term}})
-        results.append({"name": "resolve_project", "result": resolved})
+    handler = _HANDLERS.get(intent)
+    if handler is None:
+        cot.append(f"tools: intent {intent!r} không có handler")
+        logger.warning("tools: intent %r không có handler", intent)
+        return {"tool_calls": [], "tool_results": [], "cot": cot}
 
-        # 2) tuỳ resolve → tìm theo project_id hoặc theo province.
-        if isinstance(resolved, dict) and resolved.get("matched"):
-            project_id = resolved["project"]["id"]
-            args = {"project_id": project_id, "limit": 10}
-            if slots.get("property_type"):
-                args["property_type"] = slots["property_type"]
-            listings = await _guarded_call(ctx, allow, "search_listings", args)
-            calls.append({"name": "search_listings", "args": args})
-            results.append({"name": "search_listings", "result": listings})
-        else:
-            args = {"province": term, "limit": 10}
-            if slots.get("property_type"):
-                args["property_type"] = slots["property_type"]
-            listings = await _guarded_call(ctx, allow, "search_listings_by_province", args)
-            calls.append({"name": "search_listings_by_province", "args": args})
-            results.append({"name": "search_listings_by_province", "result": listings})
+    run = _ToolRun(ctx, skill.tools if skill else [])
+    override = await handler(run, slots, state)
 
-        # 3) CTA cho listing đầu tiên (nếu có).
-        first = (listings or [None])[0] if isinstance(listings, list) else None
-        if first and first.get("id"):
-            ctas = await _guarded_call(ctx, allow, "listing_cta_actions", {"listing_id": first["id"]})
-            calls.append({"name": "listing_cta_actions", "args": {"listing_id": first["id"]}})
-            results.append({"name": "listing_cta_actions", "result": ctas})
+    cot.extend(run.cot)
+    if run.calls:
+        cot.append(f"tools: gọi {[c['name'] for c in run.calls]}")
 
-        cot.append(f"tools: gọi {[c['name'] for c in calls]}")
-    else:
-        # TODO(student): triển khai tool-calling cho US2.1/2.2/US3/US4/US5/US6.
-        #   Theo mẫu US1: chọn tool trong `allow`, build args từ `slots`, _guarded_call.
-        cot.append(f"tools: intent {intent} chưa có nhánh (TODO student)")
-
-    return {"tool_calls": calls, "tool_results": results, "cot": cot}
+    out: dict[str, Any] = {
+        "tool_calls": run.calls,
+        "tool_results": run.results,
+        "cot": cot,
+    }
+    if override:
+        out.update(override)
+    return out
