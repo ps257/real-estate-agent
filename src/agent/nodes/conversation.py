@@ -9,34 +9,39 @@ from __future__ import annotations
 from agent.nodes.context import NodeContext
 from agent.state import AgentState
 
-
 async def manage_conversation(state: AgentState, ctx: NodeContext) -> dict:
     """
     INPUT  : ``active_skill``, ``entities`` (+ ``slots`` tích luỹ qua các lượt).
     OUTPUT : ``slots`` (đã map từ entities) + ``needs_clarification`` (bool).
-             Nếu thiếu slot → set ``needs_clarification=True`` (graph rẽ sang compose để hỏi).
-
-    Scaffold (US1): coi là đủ slot nếu có 'project' hoặc 'province' trong entities.
-    # TODO(student): map entities -> slots theo từng skill; xử lý đa lượt (nhớ slot cũ);
-    #   khi thiếu, chuẩn bị 3 nút gợi ý (search_projects / list_provinces).
     """
+    cot = list(state.get("cot", []))
+    
+    # Bỏ qua nếu guardrail chặn
+    if state.get("needs_clarification"):
+        return {"cot": cot}
+        
     skill = ctx.skills.by_name(state.get("active_skill") or "")
     entities = state.get("entities", {})
     slots = dict(state.get("slots", {}))
 
-    # Map tối thiểu cho US1: gộp project/province thành slot 'project_or_province'.
-    if entities.get("project") or entities.get("province"):
-        slots["project_or_province"] = entities.get("project") or entities.get("province")
-    if entities.get("property_type"):
-        slots["property_type"] = entities["property_type"]
+    # Hỗ trợ US1: nếu có project/province
+    if entities.get("project_or_province"):
+        slots["project_or_province"] = entities.get("project_or_province")
+    if entities.get("province"):
+        slots["province"] = entities.get("province")
+
+    # Lưu các entity còn lại vào slots
+    for k, v in entities.items():
+        if v:
+            slots[k] = v
 
     required = skill.required_slots if skill else []
     missing = [s for s in required if s not in slots]
     needs = bool(missing)
 
-    cot = list(state.get("cot", []))
     cot.append(
         f"conversation: slots={slots}, thiếu={missing or 'không'} -> "
         f"{'hỏi lại' if needs else 'đủ slot'}"
     )
     return {"slots": slots, "needs_clarification": needs, "cot": cot}
+
