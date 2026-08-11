@@ -75,13 +75,39 @@ class Settings:
     """Cấu hình tổng của agent."""
 
     llm_model: str = field(
-        default_factory=lambda: os.getenv("AGENT_LLM_MODEL", "claude-haiku-4-5-20251001")
+        default_factory=lambda: os.getenv("AGENT_LLM_MODEL", "gpt-5.6")
     )
-    anthropic_api_key: str | None = field(
-        default_factory=lambda: os.getenv("ANTHROPIC_API_KEY")
+    openai_api_key: str | None = field(
+        default_factory=lambda: os.getenv("OPENAI_API_KEY")
+    )
+    # Trỏ sang endpoint OpenAI-compatible khác (Azure OpenAI, vLLM, OpenRouter,
+    # LiteLLM...). Bỏ trống = dùng api.openai.com.
+    openai_base_url: str | None = field(
+        default_factory=lambda: os.getenv("OPENAI_BASE_URL") or None
     )
     skills_dir: Path = field(
         default_factory=lambda: Path(os.getenv("SKILLS_DIR", str(_DEFAULT_SKILLS_DIR)))
+    )
+
+    # --- Guardrail tầng 2 (LLM classifier) — xem agent/guardrail_llm.py ---
+    # Tắt bằng GUARDRAIL_LLM_ENABLED=false; cũng tự tắt khi thiếu OPENAI_API_KEY.
+    guardrail_llm_enabled: bool = field(
+        default_factory=lambda: os.getenv("GUARDRAIL_LLM_ENABLED", "true").lower()
+        not in ("false", "0", "no")
+    )
+    # Model riêng cho classifier — CỐ Ý không fallback về AGENT_LLM_MODEL:
+    # phân loại 5 nhãn không cần model flagship, và tầng này nằm trên đường đi
+    # của mọi request tầng 1 bỏ sót nên giá/latency quan trọng hơn trí tuệ.
+    guardrail_llm_model: str = field(
+        default_factory=lambda: os.getenv("GUARDRAIL_LLM_MODEL", "gpt-5.6-luna")
+    )
+    # Ngân sách latency cứng (giây). Hết giờ -> cho qua (fail-open).
+    guardrail_llm_timeout: float = field(
+        default_factory=lambda: float(os.getenv("GUARDRAIL_LLM_TIMEOUT", "2.0"))
+    )
+    # Chỉ chặn khi model đủ chắc — chống chặn nhầm câu hỏi hợp lệ.
+    guardrail_min_confidence: float = field(
+        default_factory=lambda: float(os.getenv("GUARDRAIL_MIN_CONFIDENCE", "0.7"))
     )
     host: str = field(default_factory=lambda: os.getenv("HOST", "127.0.0.1"))
     port: int = field(default_factory=lambda: int(os.getenv("PORT", "8000")))

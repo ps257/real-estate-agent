@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from agent.config import get_settings
+from agent.guardrail_llm import GuardrailVerdict, LLMGuardrail, build_guardrail_llm
 from agent.nodes.context import NodeContext
 from agent.nodes.normalize import check_guardrail, normalize, normalize_text
 from agent.state import new_state
@@ -104,3 +106,97 @@ async def test_node_xoa_guardrail_cu(ctx):
 
     out = await normalize(state, ctx)
     assert out["guardrail"] is None
+
+
+# ------------------------------------------------------- tầng 2 (LLM classifier)
+
+class FakeGuardrailLLM:
+    """Đóng vai LLMGuardrail, không gọi API. Ghi lại số lần được gọi."""
+
+    def __init__(self, verdict: GuardrailVerdict | None = None) -> None:
+        self.verdict = verdict
+        self.calls: list[str] = []
+
+    async def classify(self, text: str) -> GuardrailVerdict | None:
+        self.calls.append(text)
+        return self.verdict
+
+
+def _ctx_with(skills, null_mcp, fake) -> NodeContext:
+    return NodeContext(skills=skills, mcp=null_mcp, guardrail_llm=fake)
+
+
+async def test_tang2_bat_cau_vong_vo(skills, null_mcp):
+    """Câu regex bỏ sót nhưng LLM bắt được -> chặn, dùng lại message của rule."""
+    fake = FakeGuardrailLLM(
+        GuardrailVerdict(code="investment", confidence=0.9, reason="xin ý kiến đầu tư")
+    )
+    text = "Theo em thì bỏ tiền vào đây có ổn không?"
+    assert check_guardrail(normalize_text(text)) is None  # tầng 1 bỏ sót
+
+    out = await normalize(new_state(text, "t1"), _ctx_with(skills, null_mcp, fake))
+
+    assert out["guardrail"]["code"] == "investment"
+    assert out["guardrail"]["message"]      # lấy từ _RULES, không phải LLM sinh ra
+    assert out["guardrail"]["suggestions"]
+
+
+async def test_tang2_khong_chay_khi_tang1_da_bat(skills, null_mcp):
+    """Tiết kiệm latency: regex bắt được thì không gọi LLM."""
+    fake = FakeGuardrailLLM(
+        GuardrailVerdict(code="valuation", confidence=1.0, reason="x")
+    )
+    out = await normalize(
+        new_state("Anh muốn định giá căn hộ", "t1"), _ctx_with(skills, null_mcp, fake)
+    )
+
+    assert out["guardrail"]["code"] == "valuation"
+    assert fake.calls == []
+
+
+async def test_tang2_cho_qua_khi_hop_le(skills, null_mcp):
+    """classify() trả None (hợp lệ / dưới ngưỡng / lỗi) -> request đi tiếp."""
+    fake = FakeGuardrailLLM(None)
+    out = await normalize(
+        new_state("Tìm căn hộ Vinhomes", "t1"), _ctx_with(skills, null_mcp, fake)
+    )
+
+    assert out["guardrail"] is None
+    assert fake.calls == ["Tìm căn hộ Vinhomes"]
+
+
+async def test_tang2_bo_qua_khi_khong_cau_hinh(ctx):
+    """ctx.guardrail_llm=None (test/thiếu key) -> chỉ chạy regex, không lỗi."""
+    out = await normalize(new_state("Bỏ tiền vào đây ổn không?", "t1"), ctx)
+    assert out["guardrail"] is None
+
+
+# ------------------------------------------------------------- LLMGuardrail
+
+def test_tu_tat_khi_thieu_api_key(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    assert LLMGuardrail(get_settings()).enabled is False
+    assert build_guardrail_llm(get_settings()) is None
+
+
+def test_tu_tat_khi_enabled_false(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-proj-test")
+    monkeypatch.setenv("GUARDRAIL_LLM_ENABLED", "false")
+    assert LLMGuardrail(get_settings()).enabled is False
+
+
+def test_model_classifier_khong_ke_thua_agent_model(monkeypatch):
+    """GUARDRAIL_LLM_MODEL độc lập: đổi AGENT_LLM_MODEL không kéo theo classifier."""
+    monkeypatch.delenv("GUARDRAIL_LLM_MODEL", raising=False)
+    monkeypatch.setenv("AGENT_LLM_MODEL", "gpt-5.6")
+    settings = get_settings()
+    assert settings.llm_model == "gpt-5.6"
+    assert settings.guardrail_llm_model == "gpt-5.6-luna"
+
+
+async def test_khong_goi_api_voi_input_rong(monkeypatch):
+    """Guard rỗng: không tốn request nào."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-proj-test")
+    guardrail = LLMGuardrail(get_settings())
+    assert await guardrail.classify("   ") is None
+    assert guardrail._client is None  # chưa từng khởi tạo client

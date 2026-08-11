@@ -3,8 +3,11 @@
 PRD bước 1, hai việc:
   1. **Chuẩn hoá** input tiếng Việt: Unicode NFC, khoảng trắng, dấu câu lặp,
      ký tự kéo dài, viết tắt/teencode phổ biến.
-  2. **Guardrail**: chặn sớm các chủ đề "Out of scope" của PRD (định giá, tư vấn
-     đầu tư, mô phỏng tài chính/trả góp, giao dịch online).
+  2. **Guardrail** hai tầng, chặn sớm các chủ đề "Out of scope" của PRD (định giá,
+     tư vấn đầu tư, mô phỏng tài chính/trả góp, giao dịch online):
+       - tầng 1 = regex trong file này (rẻ, deterministic, chạy mọi request);
+       - tầng 2 = LLM classifier (agent/guardrail_llm.py), chỉ chạy khi tầng 1
+         không bắt được, để phủ cách diễn đạt vòng vo.
 
 Khi guardrail bắt được, node đặt ``state["guardrail"]`` và graph rẽ **thẳng** sang
 ``compose`` — bỏ qua intent/entities/tools (xem graph.py::_route_after_normalize).
@@ -211,11 +214,15 @@ _RULES: tuple[GuardrailRule, ...] = (
 )
 
 
-def check_guardrail(text: str) -> GuardrailRule | None:
-    """Trả về rule bị vi phạm, hoặc None nếu input nằm trong phạm vi hỗ trợ.
+# Tra rule theo code — dùng khi tầng 2 (LLM) trả về code thay vì rule object.
+_RULES_BY_CODE: dict[str, GuardrailRule] = {r.code: r for r in _RULES}
 
-    # TODO(student, nâng cao): thay/bổ sung bằng LLM classifier để bắt các cách
-    #   diễn đạt vòng vo mà regex bỏ sót; giữ regex làm lớp chặn nhanh (rẻ + chắc).
+
+def check_guardrail(text: str) -> GuardrailRule | None:
+    """Tầng 1 — regex. Trả về rule bị vi phạm, hoặc None nếu không bắt được.
+
+    Rẻ (~micro giây) và deterministic, nhưng chỉ bắt được cách diễn đạt gần với
+    pattern. Phần vòng vo do tầng 2 (agent/guardrail_llm.py) xử lý.
     """
     probe = strip_diacritics(text).lower()
     informational = bool(_INFORMATIONAL_RE.search(probe))
@@ -247,9 +254,20 @@ async def normalize(state: AgentState, ctx: NodeContext) -> dict:
     suffix = "" if text == raw.strip() else " (đã chuẩn hoá)"
     cot.append(f"normalize: {text!r}{suffix}")
 
+    # Tầng 1: regex — rẻ, chạy trước, bắt cách diễn đạt trực diện.
     rule = check_guardrail(text)
+    source = "regex"
+
+    # Tầng 2: LLM classifier — CHỈ chạy khi tầng 1 không bắt được, nên phần lớn
+    # request không tốn thêm latency. Fail-open: lỗi/timeout -> trả None -> cho qua.
+    if rule is None and ctx.guardrail_llm is not None:
+        verdict = await ctx.guardrail_llm.classify(text)
+        if verdict is not None:
+            rule = _RULES_BY_CODE.get(verdict.code)
+            source = f"llm {verdict.confidence:.2f} — {verdict.reason}"
+
     if rule is not None:
-        cot.append(f"guardrail: chặn nhóm out-of-scope '{rule.code}'")
+        cot.append(f"guardrail: chặn nhóm out-of-scope '{rule.code}' [{source}]")
         return {
             "normalized_input": text,
             "guardrail": {
@@ -260,7 +278,8 @@ async def normalize(state: AgentState, ctx: NodeContext) -> dict:
             "cot": cot,
         }
 
-    cot.append("guardrail: pass (trong phạm vi hỗ trợ)")
+    tiers = "regex" if ctx.guardrail_llm is None else "regex+llm"
+    cot.append(f"guardrail: pass (trong phạm vi hỗ trợ) [{tiers}]")
     # Trả None tường minh để xoá guardrail còn sót từ lượt trước (checkpointer
     # giữ state theo thread_id, không tự reset field này).
     return {"normalized_input": text, "guardrail": None, "cot": cot}

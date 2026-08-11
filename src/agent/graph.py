@@ -40,14 +40,18 @@ def build_graph(
     skills: SkillRegistry,
     mcp: MCPProtocol,
     *,
-    llm_model: str = "claude-haiku-4-5-20251001",
+    llm_model: str = "gpt-5.6",
+    guardrail_llm=None,
     checkpointer=None,
 ):
     """Trả về graph đã compile. Bind NodeContext vào từng node qua partial.
 
     checkpointer=None → MemorySaver (đổi sang RedisSaver để theo PRD).
+    guardrail_llm=None → chỉ chạy guardrail tầng regex.
     """
-    ctx = NodeContext(skills=skills, mcp=mcp, llm_model=llm_model)
+    ctx = NodeContext(
+        skills=skills, mcp=mcp, llm_model=llm_model, guardrail_llm=guardrail_llm
+    )
 
     g = StateGraph(AgentState)
     g.add_node("normalize", partial(normalize, ctx=ctx))
@@ -79,8 +83,14 @@ def build_graph(
 def build_default_graph():
     """Graph dùng MCP thật + skill catalog từ config. [DONE]"""
     from agent.config import get_settings
+    from agent.guardrail_llm import build_guardrail_llm
 
     settings = get_settings()
     skills = SkillRegistry.load(settings.skills_dir)
     mcp = MCPClient(settings.mcp)
-    return build_graph(skills, mcp, llm_model=settings.llm_model)
+    return build_graph(
+        skills,
+        mcp,
+        llm_model=settings.llm_model,
+        guardrail_llm=build_guardrail_llm(settings),
+    )
