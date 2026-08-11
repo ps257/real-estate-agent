@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from agent.guardrail_llm import LLMGuardrail
+from agent.intent_llm import IntentClassifier
 from agent.mcp.client import MCPProtocol
 from agent.skills.loader import SkillRegistry
 
@@ -20,3 +21,5 @@ class NodeContext:
     llm_model: str = "gpt-5.6"
     # Guardrail tầng 2. None = chỉ chạy tầng regex (test, hoặc thiếu API key).
     guardrail_llm: LLMGuardrail | None = None
+    # Intent tầng 2. None = chỉ chạy rule CTA rồi fallback US1_SEARCH.
+    intent_llm: IntentClassifier | None = None

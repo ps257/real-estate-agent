@@ -113,6 +113,24 @@ class Settings:
     guardrail_min_confidence: float = field(
         default_factory=lambda: float(os.getenv("GUARDRAIL_MIN_CONFIDENCE", "0.7"))
     )
+
+    # --- Intent classifier — xem agent/intent_llm.py ---
+    intent_llm_enabled: bool = field(
+        default_factory=lambda: os.getenv("INTENT_LLM_ENABLED", "true").lower()
+        not in ("false", "0", "no")
+    )
+    # Khác guardrail: intent MẶC ĐỊNH kế thừa AGENT_LLM_MODEL, vì mục tiêu PRD
+    # >95% đòi model mạnh hơn bài phân loại 5 nhãn của guardrail.
+    intent_llm_model: str = field(
+        default_factory=lambda: os.getenv("INTENT_LLM_MODEL")
+        or os.getenv("AGENT_LLM_MODEL", "gpt-5.6")
+    )
+    # Hết giờ -> fallback US1_SEARCH, tức phân loại SAI mà không có lỗi nào báo
+    # ra. Đo thực tế: gpt-4o-mini p95 ~2s; gpt-5.6 (reasoning) p95 ~6s và chạm
+    # trần ở 6.0s. 10s để timeout là ngoại lệ thật, không phải chuyện thường ngày.
+    intent_llm_timeout: float = field(
+        default_factory=lambda: float(os.getenv("INTENT_LLM_TIMEOUT", "10.0"))
+    )
     host: str = field(default_factory=lambda: os.getenv("HOST", "127.0.0.1"))
     port: int = field(default_factory=lambda: int(os.getenv("PORT", "8000")))
     # Auth cho endpoint public: danh sách API key hợp lệ (rỗng = không yêu cầu).
