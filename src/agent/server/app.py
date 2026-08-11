@@ -10,6 +10,7 @@ Chạy: ``uvicorn agent.server.app:app --reload``
 from __future__ import annotations
 
 import json
+import secrets
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -58,7 +59,7 @@ async def require_api_key(authorization: str | None = Header(default=None)) -> N
     if not keys:  # dev/local: không bắt buộc
         return
     token = (authorization or "").removeprefix("Bearer ").strip()
-    if token not in keys:
+    if not any(secrets.compare_digest(token, key) for key in keys):
         raise HTTPException(
             status_code=401,
             detail={"error": {"message": "Invalid API key", "type": "invalid_request_error",
@@ -87,7 +88,7 @@ class ChatRequest(BaseModel):
 
 
 @app.post("/chat")
-async def chat(req: ChatRequest) -> dict:
+async def chat(req: ChatRequest, _: None = Depends(require_api_key)) -> dict:
     """Non-stream: chạy graph tới END, trả full JSON (native shape)."""
     return await run_once(
         _get_graph(),
@@ -98,7 +99,9 @@ async def chat(req: ChatRequest) -> dict:
 
 
 @app.post("/chat/stream")
-async def chat_stream(req: ChatRequest) -> EventSourceResponse:
+async def chat_stream(
+    req: ChatRequest, _: None = Depends(require_api_key)
+) -> EventSourceResponse:
     """Stream: SSE mô phỏng OpenAI Realtime server events (kèm chain-of-thought)."""
 
     async def gen():
