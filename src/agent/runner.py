@@ -27,26 +27,34 @@ from agent.events import (
 from agent.state import new_state
 
 
-def _final_payload(state: dict, thread_id: str) -> dict[str, Any]:
+def _final_payload(
+    state: dict, thread_id: str, *, include_reasoning: bool = False
+) -> dict[str, Any]:
     """Payload tổng hợp — dùng cho non-stream và cho response.done."""
-    return {
+    payload = {
         "thread_id": thread_id,
         "intent": state.get("intent"),
         "text": state.get("response_text", ""),
-        "reasoning": state.get("cot", []),
         "tool_calls": state.get("tool_calls", []),
         "actions": state.get("actions", []),
     }
+    if include_reasoning:
+        payload["reasoning"] = state.get("cot", [])
+    return payload
 
 
-async def run_once(graph, message: str, thread_id: str) -> dict[str, Any]:
+async def run_once(
+    graph, message: str, thread_id: str, *, include_reasoning: bool = False
+) -> dict[str, Any]:
     """Chạy graph, trả full JSON (non-stream)."""
     config = {"configurable": {"thread_id": thread_id}}
     result = await graph.ainvoke(new_state(message, thread_id), config=config)
-    return _final_payload(result, thread_id)
+    return _final_payload(result, thread_id, include_reasoning=include_reasoning)
 
 
-async def run_stream(graph, message: str, thread_id: str) -> AsyncIterator[Event]:
+async def run_stream(
+    graph, message: str, thread_id: str, *, include_reasoning: bool = False
+) -> AsyncIterator[Event]:
     """Chạy graph, yield chuỗi Event mô phỏng OpenAI Realtime server events."""
     response_id = f"resp_{uuid.uuid4().hex[:12]}"
     yield ResponseCreated(response_id=response_id, thread_id=thread_id)
@@ -55,8 +63,9 @@ async def run_stream(graph, message: str, thread_id: str) -> AsyncIterator[Event
     state = await graph.ainvoke(new_state(message, thread_id), config=config)
 
     # 1) Chain-of-thought.
-    for step in state.get("cot", []):
-        yield ReasoningDelta(delta=step)
+    if include_reasoning:
+        for step in state.get("cot", []):
+            yield ReasoningDelta(delta=step)
 
     # 2) MCP tool calls (arguments trước, completed sau — ghép theo thứ tự).
     calls = state.get("tool_calls", [])
@@ -75,7 +84,9 @@ async def run_stream(graph, message: str, thread_id: str) -> AsyncIterator[Event
         yield ActionEvent(action=action)
 
     # 5) Done.
-    yield ResponseDone(response=_final_payload(state, thread_id))
+    yield ResponseDone(
+        response=_final_payload(state, thread_id, include_reasoning=include_reasoning)
+    )
 
 
 def _chunk_text(text: str, size: int = 6) -> list[str]:

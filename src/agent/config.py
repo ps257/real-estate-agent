@@ -30,6 +30,12 @@ def _parse_headers(raw: str | None) -> dict[str, str]:
     return out
 
 
+def _parse_bool(raw: str | None, *, default: bool = False) -> bool:
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class MCPConfig:
     """Cấu hình kết nối MCP server `real-estate-mcp`.
@@ -98,6 +104,9 @@ class Settings:
     )
     public_base_url: str = field(
         default_factory=lambda: os.getenv("PUBLIC_BASE_URL", "http://localhost:8000")
+    )
+    expose_reasoning: bool = field(
+        default_factory=lambda: _parse_bool(os.getenv("AGENT_EXPOSE_REASONING"))
     )
     mcp: MCPConfig = field(default_factory=MCPConfig)
 

@@ -89,7 +89,12 @@ class ChatRequest(BaseModel):
 @app.post("/chat")
 async def chat(req: ChatRequest) -> dict:
     """Non-stream: chạy graph tới END, trả full JSON (native shape)."""
-    return await run_once(_get_graph(), req.message, req.thread_id)
+    return await run_once(
+        _get_graph(),
+        req.message,
+        req.thread_id,
+        include_reasoning=_settings.expose_reasoning,
+    )
 
 
 @app.post("/chat/stream")
@@ -97,7 +102,12 @@ async def chat_stream(req: ChatRequest) -> EventSourceResponse:
     """Stream: SSE mô phỏng OpenAI Realtime server events (kèm chain-of-thought)."""
 
     async def gen():
-        async for event in run_stream(_get_graph(), req.message, req.thread_id):
+        async for event in run_stream(
+            _get_graph(),
+            req.message,
+            req.thread_id,
+            include_reasoning=_settings.expose_reasoning,
+        ):
             # sse-starlette tự bọc `event:`/`data:`; ta cung cấp cả 2 field.
             yield {"event": event.type, "data": event.model_dump_json(exclude_none=True)}
 
@@ -141,11 +151,22 @@ async def openai_chat_completions(
     graph = _get_graph()
 
     if not req.stream:
-        payload = await run_once(graph, message, thread_id)
+        payload = await run_once(
+            graph,
+            message,
+            thread_id,
+            include_reasoning=_settings.expose_reasoning,
+        )
         return to_chat_completion(payload, req.model)
 
     async def gen():
-        async for chunk in stream_chat_completion_chunks(graph, message, thread_id, req.model):
+        async for chunk in stream_chat_completion_chunks(
+            graph,
+            message,
+            thread_id,
+            req.model,
+            include_reasoning=_settings.expose_reasoning,
+        ):
             # OpenAI stream framing: mỗi chunk là `data: <json>`, kết thúc bằng `data: [DONE]`.
             yield {"data": json.dumps(chunk, ensure_ascii=False)}
         yield {"data": "[DONE]"}

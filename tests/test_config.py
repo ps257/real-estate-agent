@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agent.config import MCPConfig, _parse_headers
+from agent.config import MCPConfig, _parse_bool, _parse_headers
 
 
 def test_stdio_spec():
@@ -39,3 +39,10 @@ def test_parse_headers():
     assert _parse_headers("A=1,B=2") == {"A": "1", "B": "2"}
     assert _parse_headers("") == {}
     assert _parse_headers(None) == {}
+
+
+def test_parse_bool():
+    assert _parse_bool("true") is True
+    assert _parse_bool("ON") is True
+    assert _parse_bool("false") is False
+    assert _parse_bool(None) is False

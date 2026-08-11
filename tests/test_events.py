@@ -12,6 +12,7 @@ from agent.events import (
     ResponseDone,
 )
 from agent.openai_compat import extract_last_user_message, to_chat_completion
+from agent.runner import _final_payload
 
 
 def test_event_sse_framing():
@@ -67,3 +68,16 @@ def test_to_chat_completion_shape():
     # Dữ liệu miền nằm ở field mở rộng 'agent'.
     assert msg["agent"]["intent"] == "US1_SEARCH"
     assert out["choices"][0]["finish_reason"] == "stop"
+
+
+def test_to_chat_completion_omits_reasoning_when_not_provided():
+    out = to_chat_completion({"text": "xong"}, model="real-estate-agent")
+    assert "reasoning" not in out["choices"][0]["message"]["agent"]
+
+
+def test_final_payload_hides_reasoning_by_default():
+    state = {"response_text": "xong", "cot": ["internal step"]}
+    assert "reasoning" not in _final_payload(state, "t1")
+    assert _final_payload(state, "t1", include_reasoning=True)["reasoning"] == [
+        "internal step"
+    ]
