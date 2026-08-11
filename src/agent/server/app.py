@@ -16,6 +16,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
+from starlette.responses import JSONResponse
 
 from agent.config import get_settings
 from agent.openai_compat import (
@@ -27,7 +28,17 @@ from agent.runner import run_once, run_stream
 
 _settings = get_settings()
 
-app = FastAPI(title="Real Estate Market Intelligence Agent")
+
+class UTF8JSONResponse(JSONResponse):
+    """Declare UTF-8 explicitly for clients that do not follow the JSON default."""
+
+    media_type = "application/json; charset=utf-8"
+
+
+app = FastAPI(
+    title="Real Estate Market Intelligence Agent",
+    default_response_class=UTF8JSONResponse,
+)
 
 # CORS — cho frontend (domain khác) gọi được. Cấu hình qua CORS_ALLOW_ORIGINS.
 app.add_middleware(
