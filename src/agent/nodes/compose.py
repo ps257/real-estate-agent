@@ -49,8 +49,20 @@ async def compose(state: AgentState, ctx: NodeContext) -> dict:
     # Nhánh clarify: thiếu slot -> hỏi lại kèm gợi ý.
     if state.get("needs_clarification"):
         skill = ctx.skills.by_name(state.get("active_skill") or "")
-        prompt = (skill.clarify_prompt if skill else None) or "Dạ anh/chị muốn tìm ở dự án nào ạ?"
-        actions.append({"type": "clarify", "prompt": prompt, "suggestions": []})
+        # conversation soạn sẵn câu hỏi + gợi ý khi nó biết cụ thể thiếu gì
+        # (vd tên dự án mơ hồ, có danh sách ứng viên). Không có thì lùi về
+        # clarify_prompt chung của skill.
+        clarify = state.get("clarify") or {}
+        prompt = (
+            clarify.get("prompt")
+            or (skill.clarify_prompt if skill else None)
+            or "Dạ anh/chị muốn tìm ở dự án nào ạ?"
+        )
+        actions.append({
+            "type": "clarify",
+            "prompt": prompt,
+            "suggestions": clarify.get("suggestions", []),
+        })
         cot.append("compose: hỏi làm rõ slot")
         return {"response_text": prompt, "actions": actions, "cot": cot}
 
