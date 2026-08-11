@@ -43,13 +43,15 @@ def build_graph(
     llm_model: str = "gpt-5.6",
     guardrail_llm=None,
     intent_llm=None,
+    entities_llm=None,
     checkpointer=None,
 ):
     """Trả về graph đã compile. Bind NodeContext vào từng node qua partial.
 
-    checkpointer=None → MemorySaver (đổi sang RedisSaver để theo PRD).
+    checkpointer=None  → MemorySaver (đổi sang RedisSaver để theo PRD).
     guardrail_llm=None → chỉ chạy guardrail tầng regex.
     intent_llm=None    → chỉ chạy rule CTA rồi fallback US1_SEARCH.
+    entities_llm=None  → entities luôn rỗng, conversation sẽ hỏi lại.
     """
     ctx = NodeContext(
         skills=skills,
@@ -57,6 +59,7 @@ def build_graph(
         llm_model=llm_model,
         guardrail_llm=guardrail_llm,
         intent_llm=intent_llm,
+        entities_llm=entities_llm,
     )
 
     g = StateGraph(AgentState)
@@ -89,6 +92,7 @@ def build_graph(
 def build_default_graph():
     """Graph dùng MCP thật + skill catalog từ config. [DONE]"""
     from agent.config import get_settings
+    from agent.entities_llm import build_entity_extractor
     from agent.guardrail_llm import build_guardrail_llm
     from agent.intent_llm import build_intent_classifier
 
@@ -101,4 +105,5 @@ def build_default_graph():
         llm_model=settings.llm_model,
         guardrail_llm=build_guardrail_llm(settings),
         intent_llm=build_intent_classifier(settings),
+        entities_llm=build_entity_extractor(settings),
     )

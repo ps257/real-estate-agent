@@ -131,6 +131,20 @@ class Settings:
     intent_llm_timeout: float = field(
         default_factory=lambda: float(os.getenv("INTENT_LLM_TIMEOUT", "10.0"))
     )
+
+    # --- Entity extraction — xem agent/entities_llm.py ---
+    entities_llm_enabled: bool = field(
+        default_factory=lambda: os.getenv("ENTITIES_LLM_ENABLED", "true").lower()
+        not in ("false", "0", "no")
+    )
+    entities_llm_model: str = field(
+        default_factory=lambda: os.getenv("ENTITIES_LLM_MODEL")
+        or os.getenv("AGENT_LLM_MODEL", "gpt-5.6")
+    )
+    # Hết giờ -> entities rỗng -> conversation hỏi lại (an toàn, không đoán bừa).
+    entities_llm_timeout: float = field(
+        default_factory=lambda: float(os.getenv("ENTITIES_LLM_TIMEOUT", "10.0"))
+    )
     host: str = field(default_factory=lambda: os.getenv("HOST", "127.0.0.1"))
     port: int = field(default_factory=lambda: int(os.getenv("PORT", "8000")))
     # Auth cho endpoint public: danh sách API key hợp lệ (rỗng = không yêu cầu).

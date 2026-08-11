@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from agent.entities_llm import EntityExtractor
 from agent.guardrail_llm import LLMGuardrail
 from agent.intent_llm import IntentClassifier
 from agent.mcp.client import MCPProtocol
@@ -23,3 +24,5 @@ class NodeContext:
     guardrail_llm: LLMGuardrail | None = None
     # Intent tầng 2. None = chỉ chạy rule CTA rồi fallback US1_SEARCH.
     intent_llm: IntentClassifier | None = None
+    # Entity extraction. None = trả entities rỗng, conversation sẽ hỏi lại.
+    entities_llm: EntityExtractor | None = None
