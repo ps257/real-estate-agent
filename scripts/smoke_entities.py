@@ -30,27 +30,33 @@ logging.basicConfig(level=logging.WARNING, format="    [log] %(message)s")
 # field thừa mới là loại nguy hiểm, vì nó lọc mất kết quả đúng.
 CASES: list[tuple[str, str, dict]] = [
     ("Tôi muốn tìm căn hộ Vinhomes Global Gate", "US1_SEARCH",
-     {"project": "Vinhomes Global Gate", "property_type": "apartment"}),
+     {"project": "Vinhomes Global Gate", "property_type": "can_ho"}),
     # "căn" (không phải "căn hộ") là mơ hồ — nhà phố/biệt thự cũng có 2PN.
     # KHÔNG được suy ra property_type: ép apartment sẽ loại oan nhà phố 2PN.
     ("Cho em xem căn 2 phòng ngủ dưới 5 tỷ", "US1_SEARCH",
      {"bedrooms": 2, "max_price_vnd": 5_000_000_000}),
     ("Nhà phố ở Hà Nội từ 3 đến 5 tỷ", "US1_SEARCH",
-     {"property_type": "townhouse", "province": "Hà Nội",
+     {"property_type": "nha_pho", "province": "Hà Nội",
       "min_price_vnd": 3_000_000_000, "max_price_vnd": 5_000_000_000}),
+    # "liền kề" là mã riêng, khác nha_pho.
+    ("Liền kề Hưng Yên dưới 10 tỷ", "US1_SEARCH",
+     {"property_type": "lien_ke", "province": "Hưng Yên",
+      "max_price_vnd": 10_000_000_000}),
     # Chỉ nói diện tích -> KHÔNG được tự thêm điều kiện giá.
     ("Chung cư TPHCM trên 80m2", "US1_SEARCH",
-     {"property_type": "apartment", "province": "Hồ Chí Minh", "min_area_m2": 80.0}),
+     {"property_type": "can_ho", "province": "Hồ Chí Minh", "min_area_m2": 80.0}),
     # Giá không kèm "dưới/trên" = TẦM GIÁ -> phải ra khoảng, không được min==max
     # (min==max thì search_listings gần như chắc chắn trả rỗng).
+    # "biệt thự" chung chung: dữ liệu chỉ có đơn/song/tứ lập. Đoán một trong ba
+    # sẽ lọc mất hai loại còn lại -> phải để null.
     ("Biệt thự khoảng 800 triệu", "US1_SEARCH",
-     {"property_type": "villa", "min_price_vnd": 720_000_000,
-      "max_price_vnd": 880_000_000}),
+     {"min_price_vnd": 720_000_000, "max_price_vnd": 880_000_000}),
     ("Căn hộ 3 tỷ 5 ở Đà Nẵng", "US1_SEARCH",
-     {"property_type": "apartment", "province": "Đà Nẵng",
+     {"property_type": "can_ho", "province": "Đà Nẵng",
       "min_price_vnd": 3_150_000_000, "max_price_vnd": 3_850_000_000}),
+    # "đất nền" KHÔNG có trong từ vựng dữ liệu -> sanitize phải loại.
     ("Tìm đất nền từ 2 phòng trở lên", "US1_SEARCH",
-     {"property_type": "land", "min_bedrooms": 2}),
+     {"min_bedrooms": 2}),
     ("Xem tổng quan dự án Vinhomes Ocean Park", "US4_ANALYTICS",
      {"project": "Vinhomes Ocean Park"}),
     # Tiền tố "vhm:" gợi ý Vinhomes nhưng khách không nói tên -> project phải vắng.

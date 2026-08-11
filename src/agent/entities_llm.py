@@ -26,6 +26,19 @@ _PRICE_VND_RANGE = (100_000_000, 1_000_000_000_000)  # 100 triệu .. 1000 tỷ
 _BEDROOMS_RANGE = (1, 20)
 _AREA_M2_RANGE = (10.0, 10_000.0)
 
+# Từ vựng property_type CỦA DỮ LIỆU THẬT (MCP từ chối mọi giá trị ngoài đây).
+# Không phải mã tiếng Anh — MCP dùng tiếng Việt không dấu.
+VALID_PROPERTY_TYPES = frozenset({
+    "can_ho",
+    "lien_ke",
+    "nha_pho",
+    "shophouse",
+    "thuong_mai_dich_vu",
+    "biet_thu_don_lap",
+    "biet_thu_song_lap",
+    "biet_thu_tu_lap",
+})
+
 
 class ExtractedEntities(BaseModel):
     """Thực thể trích được. Mọi field optional — câu nói hiếm khi có đủ.
@@ -66,8 +79,19 @@ khách chỉ nói tên rút gọn ("Vinhomes") thì vẫn trích đúng phần k
 tự bổ sung.
 - province: tỉnh/thành, dùng tên hành chính chuẩn — "Hồ Chí Minh" (không phải \
 "Sài Gòn"/"TPHCM"), "Hà Nội", "Đà Nẵng".
-- property_type: một trong apartment (căn hộ, chung cư), townhouse (nhà phố, \
-liền kề), villa (biệt thự), land (đất nền), shophouse. Dùng đúng mã tiếng Anh.
+- property_type: PHẢI là một trong đúng 8 mã sau (tiếng Việt không dấu, lấy từ \
+dữ liệu thật của MCP — mã ngoài danh sách này sẽ bị từ chối):
+    can_ho              — căn hộ, chung cư
+    lien_ke             — liền kề, nhà liền kề
+    nha_pho             — nhà phố
+    shophouse           — shophouse, nhà mặt tiền kinh doanh
+    thuong_mai_dich_vu  — thương mại dịch vụ
+    biet_thu_don_lap    — biệt thự đơn lập
+    biet_thu_song_lap   — biệt thự song lập
+    biet_thu_tu_lap     — biệt thự tứ lập
+  Khách nói "biệt thự" chung chung, KHÔNG rõ đơn/song/tứ lập -> để null, đừng \
+đoán một trong ba (đoán sai sẽ lọc mất hai loại còn lại).
+  Khách nói "nhà" hoặc "căn" chung chung -> cũng để null.
 - bedrooms: số phòng ngủ khi khách nói CHÍNH XÁC ("căn 2 phòng ngủ" -> 2).
 - min_bedrooms / max_bedrooms: khi khách nói khoảng ("từ 2 phòng trở lên" -> \
 min_bedrooms=2; "tối đa 3 phòng" -> max_bedrooms=3).
@@ -165,10 +189,24 @@ def sanitize(parsed: ExtractedEntities) -> dict:
     """
     out: dict = {}
 
-    for key in ("project", "province", "property_type"):
+    for key in ("project", "province"):
         value = getattr(parsed, key)
         if isinstance(value, str) and value.strip():
             out[key] = value.strip()
+
+    # property_type ngoài từ vựng của dữ liệu -> MCP trả lỗi "Unknown
+    # property_type" và cả truy vấn hỏng. Bỏ field còn hơn: mất một điều kiện
+    # lọc thì kết quả rộng hơn, còn sai mã thì KHÔNG có kết quả nào.
+    ptype = parsed.property_type
+    if isinstance(ptype, str) and ptype.strip():
+        ptype = ptype.strip().lower()
+        if ptype in VALID_PROPERTY_TYPES:
+            out["property_type"] = ptype
+        else:
+            logger.warning(
+                "entities: bỏ property_type=%r (ngoài từ vựng dữ liệu %s)",
+                ptype, sorted(VALID_PROPERTY_TYPES),
+            )
 
     for key, (low, high) in (
         ("bedrooms", _BEDROOMS_RANGE),

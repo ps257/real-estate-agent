@@ -27,7 +27,7 @@ def test_giu_gia_tri_hop_ly():
     out = sanitize(
         ExtractedEntities(
             province="Hà Nội",
-            property_type="apartment",
+            property_type="can_ho",
             bedrooms=2,
             max_price_vnd=5_000_000_000,
             min_area_m2=80.0,
@@ -35,7 +35,7 @@ def test_giu_gia_tri_hop_ly():
     )
     assert out == {
         "province": "Hà Nội",
-        "property_type": "apartment",
+        "property_type": "can_ho",
         "bedrooms": 2,
         "max_price_vnd": 5_000_000_000,
         "min_area_m2": 80.0,
@@ -91,6 +91,32 @@ def test_bedrooms_min_bang_max_thi_giu_nguyen():
     out = sanitize(ExtractedEntities(min_bedrooms=2, max_bedrooms=2))
     assert out["min_bedrooms"] == 2
     assert out["max_bedrooms"] == 2
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["apartment", "townhouse", "villa", "land", "dat_nen", "CAN_HO_XYZ"],
+)
+def test_bo_property_type_ngoai_tu_vung(value):
+    """MCP từ chối mã lạ ("Unknown property_type") -> cả truy vấn hỏng.
+
+    Bỏ field còn hơn: mất điều kiện lọc thì kết quả rộng hơn, sai mã thì KHÔNG
+    có kết quả nào. Đây là bug thật đã gặp: prompt dạy mã tiếng Anh trong khi
+    dữ liệu dùng tiếng Việt không dấu -> mọi câu nhắc loại hình đều trả rỗng.
+    """
+    assert "property_type" not in sanitize(ExtractedEntities(property_type=value))
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["can_ho", "lien_ke", "nha_pho", "shophouse", "biet_thu_don_lap"],
+)
+def test_giu_property_type_hop_le(value):
+    assert sanitize(ExtractedEntities(property_type=value))["property_type"] == value
+
+
+def test_property_type_chuan_hoa_hoa_thuong():
+    assert sanitize(ExtractedEntities(property_type="  CAN_HO "))["property_type"] == "can_ho"
 
 
 def test_listing_ids():
