@@ -102,8 +102,12 @@ class Settings:
         default_factory=lambda: os.getenv("GUARDRAIL_LLM_MODEL", "gpt-5.6-luna")
     )
     # Ngân sách latency cứng (giây). Hết giờ -> cho qua (fail-open).
+    # Đo thực tế (gpt-4o-mini, mạng VN): warm p50 ~1.4s, p95 ~2.1s; call đầu sau
+    # khi khởi động chạm 3.5s do cold start + xử lý JSON schema lần đầu.
+    # 2.0s cắt đúng giai đoạn warm-up -> 30% request im lặng lọt qua. 6.0s để
+    # timeout là ngoại lệ thật, không phải chuyện thường ngày.
     guardrail_llm_timeout: float = field(
-        default_factory=lambda: float(os.getenv("GUARDRAIL_LLM_TIMEOUT", "2.0"))
+        default_factory=lambda: float(os.getenv("GUARDRAIL_LLM_TIMEOUT", "6.0"))
     )
     # Chỉ chặn khi model đủ chắc — chống chặn nhầm câu hỏi hợp lệ.
     guardrail_min_confidence: float = field(

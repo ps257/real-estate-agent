@@ -78,8 +78,25 @@ tư. "Chủ đầu tư dự án X là ai?" là in_scope.
 3. Tra cứu BĐS, hỏi giá rao bán, so sánh thông số các căn, xem bản đồ, xem tiện \
 ích, đặt lịch tham quan, xin tư vấn viên đều là in_scope.
 4. Chào hỏi, cảm ơn, hoặc chuyện phiếm vô hại là in_scope.
-5. KHI PHÂN VÂN, CHỌN in_scope. Chặn nhầm một câu hỏi hợp lệ tệ hơn nhiều so với \
-bỏ lọt một câu ngoài phạm vi.
+5. Phân vân về CHỦ ĐỀ (không rõ khách đang hỏi gì) thì chọn in_scope — chặn nhầm \
+câu hợp lệ tệ hơn bỏ lọt. NHƯNG nếu ý định đã rõ mà chỉ diễn đạt vòng vo, hãy gán \
+đúng nhãn: nói lóng không biến một câu ngoài phạm vi thành in_scope.
+
+CÁCH NÓI GIÁN TIẾP — ĐỌC KỸ:
+
+Khách Việt Nam hiếm khi hỏi thẳng. Hãy giải mã Ý ĐỊNH, đừng khớp từ khoá. Các \
+kiểu nói vòng sau VẪN thuộc nhãn ngoài phạm vi:
+
+- Hỏi có nên mua bằng cách nói bóng: "chỗ này ngon không", "vào được không", \
+"xuống tay giờ hợp lý chứ", "múc được chưa" → investment.
+- Hỏi giá trị tài sản bằng cách nói bóng: "sang tay được bao nhiêu", "bán vội \
+thì mấy giá", "cầm về được mấy" → valuation.
+- Hỏi gánh nặng trả nợ: "mỗi tháng gánh bao nhiêu", "trả dần thì sao" → financial.
+- Rủ giao dịch ngay: "cọc luôn giờ", "chốt luôn nhé" → transaction.
+
+Ngược lại, các câu sau tuy nghe giống nhưng LÀ in_scope: "căn này giá rao bao \
+nhiêu" (tra cứu giá niêm yết), "dự án ngon không" khi hỏi về tiện ích/hạ tầng \
+chứ không phải nên mua hay không.
 
 Trả về code, confidence (0.0-1.0, mức chắc chắn của bạn), và reason ngắn gọn \
 bằng tiếng Việt (tối đa 15 từ)."""
@@ -119,6 +136,29 @@ class LLMGuardrail:
         None bao gồm cả 3 trường hợp: hợp lệ, confidence dưới ngưỡng, và lỗi
         (fail-open). Caller không cần phân biệt.
         """
+        verdict = await self.classify_raw(text)
+        if verdict is None or verdict.code == "in_scope":
+            return None
+
+        confidence = min(max(verdict.confidence, 0.0), 1.0)
+        if confidence < self._settings.guardrail_min_confidence:
+            logger.info(
+                "guardrail LLM: '%s' conf=%.2f dưới ngưỡng %.2f -> cho qua",
+                verdict.code,
+                confidence,
+                self._settings.guardrail_min_confidence,
+            )
+            return None
+
+        return verdict.model_copy(update={"confidence": confidence})
+
+    async def classify_raw(self, text: str) -> GuardrailVerdict | None:
+        """Verdict THÔ từ model — chưa lọc ``in_scope``, chưa áp ngưỡng.
+
+        Dùng để chẩn đoán (xem scripts/smoke_guardrail.py): phân biệt "model bảo
+        hợp lệ" với "model bắt đúng nhưng confidence thấp" — hai lỗi cần hai cách
+        sửa khác nhau. Trả None chỉ khi lỗi/refusal (fail-open).
+        """
         if not self.enabled or not text.strip():
             return None
 
@@ -147,22 +187,7 @@ class LLMGuardrail:
         verdict = getattr(response, "output_parsed", None)
         if verdict is None:
             logger.warning("guardrail LLM không trả verdict (refusal hoặc parse hỏng)")
-            return None
-
-        if verdict.code == "in_scope":
-            return None
-
-        confidence = min(max(verdict.confidence, 0.0), 1.0)
-        if confidence < self._settings.guardrail_min_confidence:
-            logger.info(
-                "guardrail LLM: '%s' conf=%.2f dưới ngưỡng %.2f -> cho qua",
-                verdict.code,
-                confidence,
-                self._settings.guardrail_min_confidence,
-            )
-            return None
-
-        return verdict.model_copy(update={"confidence": confidence})
+        return verdict
 
 
 def build_guardrail_llm(settings: Settings | None = None) -> LLMGuardrail | None:
