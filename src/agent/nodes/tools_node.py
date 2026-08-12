@@ -74,9 +74,31 @@ async def call_tools(state: AgentState, ctx: NodeContext) -> dict:
             results.append({"name": "listing_cta_actions", "result": ctas})
 
         cot.append(f"tools: gọi {[c['name'] for c in calls]}")
+    elif intent == "US6_COMPARE":
+        listing_ids = slots.get("listing_ids", [])
+        if listing_ids:
+            compare_data = await _guarded_call(
+                ctx, allow, "compare_listings", {"listing_ids": listing_ids}
+            )
+            calls.append({"name": "compare_listings", "args": {"listing_ids": listing_ids}})
+            results.append({"name": "compare_listings", "result": compare_data})
+
+            # Tùy chọn: gọi compare_nearby_amenities nếu có trong allow-list
+            if "compare_nearby_amenities" in allow:
+                try:
+                    amenities_data = await _guarded_call(
+                        ctx, allow, "compare_nearby_amenities", {"listing_ids": listing_ids}
+                    )
+                    if amenities_data:
+                        calls.append({"name": "compare_nearby_amenities", "args": {"listing_ids": listing_ids}})
+                        results.append({"name": "compare_nearby_amenities", "result": amenities_data})
+                except Exception:
+                    pass
+
+        cot.append(f"tools: gọi {[c['name'] for c in calls]}")
     else:
-        # TODO(student): triển khai tool-calling cho US2.1/2.2/US3/US4/US5/US6.
-        #   Theo mẫu US1: chọn tool trong `allow`, build args từ `slots`, _guarded_call.
+        # TODO(student): triển khai tool-calling cho US2.1/2.2/US3/US4/US5.
+        #   Theo mẫu US1/US6: chọn tool trong `allow`, build args từ `slots`, _guarded_call.
         cot.append(f"tools: intent {intent} chưa có nhánh (TODO student)")
 
     return {"tool_calls": calls, "tool_results": results, "cot": cot}

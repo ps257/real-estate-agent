@@ -80,6 +80,9 @@ class Settings:
     anthropic_api_key: str | None = field(
         default_factory=lambda: os.getenv("ANTHROPIC_API_KEY")
     )
+    anthropic_base_url: str | None = field(
+        default_factory=lambda: os.getenv("ANTHROPIC_BASE_URL")
+    )
     skills_dir: Path = field(
         default_factory=lambda: Path(os.getenv("SKILLS_DIR", str(_DEFAULT_SKILLS_DIR)))
     )

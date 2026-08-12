@@ -30,8 +30,17 @@ async def manage_conversation(state: AgentState, ctx: NodeContext) -> dict:
     if entities.get("property_type"):
         slots["property_type"] = entities["property_type"]
 
+    # Map và validate cho US6: listing_ids bắt buộc từ 2 đến 4 căn
+    if entities.get("listing_ids"):
+        l_ids = entities["listing_ids"]
+        if 2 <= len(l_ids) <= 4:
+            slots["listing_ids"] = l_ids
+        else:
+            # Nếu ít hơn 2 hoặc nhiều hơn 4 thì không tính là đủ slot hợp lệ
+            slots.pop("listing_ids", None)
+
     required = skill.required_slots if skill else []
-    missing = [s for s in required if s not in slots]
+    missing = [s for s in required if s not in slots or not slots[s]]
     needs = bool(missing)
 
     cot = list(state.get("cot", []))

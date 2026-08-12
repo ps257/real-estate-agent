@@ -25,15 +25,28 @@ async def detect_intent(state: AgentState, ctx: NodeContext) -> dict:
     """
     INPUT  : ``normalized_input``.
     OUTPUT : ``intent`` (một trong INTENTS) + ``active_skill`` (name của skill khớp).
-
-    Scaffold: luôn trả US1_SEARCH để pipeline chạy end-to-end.
-    # TODO(student): phân loại thật bằng LLM (ctx.llm_model) hoặc rule + few-shot.
-    #   Gợi ý: dùng ctx.skills.all() để biết các intent/description có sẵn.
     """
-    intent = "US1_SEARCH"
+    text = (state.get("normalized_input") or "").lower()
+    
+    # Kiểm tra intent so sánh (US6_COMPARE)
+    compare_keywords = [
+        "so sánh",
+        "so sanh",
+        "khác nhau",
+        "khac nhau",
+        "đối chiếu",
+        "doi chieu",
+        "compare",
+        "vs",
+    ]
+    if any(kw in text for kw in compare_keywords):
+        intent = "US6_COMPARE"
+    else:
+        intent = "US1_SEARCH"
+
     skill = ctx.skills.get(intent)
     cot = list(state.get("cot", []))
-    cot.append(f"intent: {intent} (scaffold hard-code)")
+    cot.append(f"intent: {intent}")
     return {
         "intent": intent,
         "active_skill": skill.name if skill else None,
