@@ -9,6 +9,12 @@ Chạy: ``uvicorn agent.server.app:app --reload``
 
 from __future__ import annotations
 
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except Exception:
+    pass
+
 import json
 from typing import Any
 

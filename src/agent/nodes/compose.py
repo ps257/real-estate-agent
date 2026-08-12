@@ -126,6 +126,13 @@ def _c_us6_compare(results: list[dict], state: AgentState) -> tuple[str, list[di
     comparison = _result(results, "compare_listings")
     if not isinstance(comparison, dict) or not comparison.get("listings"):
         return "Dạ em chưa so sánh được các căn anh/chị chọn ạ.", []
+    amenities = _result(results, "compare_nearby_amenities")
+    if amenities:
+        comparison = dict(comparison)
+        if isinstance(amenities, dict):
+            comparison["amenities"] = amenities.get("listings_amenities", amenities)
+        else:
+            comparison["amenities"] = amenities
     n = len(comparison["listings"])
     # KHÔNG khuyến nghị "căn nào đáng mua hơn" — Out of scope trong PRD.
     return (
