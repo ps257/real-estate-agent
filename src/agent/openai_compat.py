@@ -57,6 +57,14 @@ def extract_last_user_message(messages: list[dict[str, Any]]) -> str:
 
 def to_chat_completion(payload: dict[str, Any], model: str) -> dict[str, Any]:
     """Map payload non-stream của agent → object `chat.completion` (OpenAI)."""
+    agent_data = {
+        "intent": payload.get("intent"),
+        "tool_calls": payload.get("tool_calls", []),
+        "actions": payload.get("actions", []),
+    }
+    if "reasoning" in payload:
+        agent_data["reasoning"] = payload["reasoning"]
+
     return {
         "id": _completion_id(),
         "object": "chat.completion",
@@ -69,12 +77,7 @@ def to_chat_completion(payload: dict[str, Any], model: str) -> dict[str, Any]:
                     "role": "assistant",
                     "content": payload.get("text", ""),
                     # Field mở rộng: client thường (OpenAI SDK) bỏ qua, client nâng cao đọc được.
-                    "agent": {
-                        "intent": payload.get("intent"),
-                        "reasoning": payload.get("reasoning", []),
-                        "tool_calls": payload.get("tool_calls", []),
-                        "actions": payload.get("actions", []),
-                    },
+                    "agent": agent_data,
                 },
                 "finish_reason": "stop",
             }
@@ -95,7 +98,12 @@ def _chunk(completion_id: str, model: str, delta: dict[str, Any],
 
 
 async def stream_chat_completion_chunks(
-    graph, message: str, thread_id: str, model: str
+    graph,
+    message: str,
+    thread_id: str,
+    model: str,
+    *,
+    include_reasoning: bool = False,
 ) -> AsyncIterator[dict[str, Any]]:
     """Chạy graph, yield dict `chat.completion.chunk` (chưa serialize SSE).
 
@@ -111,7 +119,9 @@ async def stream_chat_completion_chunks(
     # Chunk mở màn: role assistant (chuẩn OpenAI: chunk đầu set role).
     yield _chunk(cid, model, {"role": "assistant", "content": ""})
 
-    async for ev in run_stream(graph, message, thread_id):
+    async for ev in run_stream(
+        graph, message, thread_id, include_reasoning=include_reasoning
+    ):
         if isinstance(ev, ReasoningDelta):
             yield _chunk(cid, model, {
                 "reasoning_content": ev.delta,

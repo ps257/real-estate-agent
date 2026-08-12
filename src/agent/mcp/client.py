@@ -33,6 +33,31 @@ def parse_tool_result(raw: Any) -> Any:
     nguyên chuỗi để caller tự xử lý (không raise, để một tool hỏng không làm
     sập cả lượt chat).
     """
+    if not isinstance(raw, (dict, list, str)):
+        if hasattr(raw, "model_dump"):
+            raw = raw.model_dump()
+        elif hasattr(raw, "content"):
+            raw = raw.content
+
+    if isinstance(raw, str):
+        try:
+            return parse_tool_result(json.loads(raw))
+        except (json.JSONDecodeError, TypeError):
+            return raw
+
+    if isinstance(raw, dict):
+        for key in ("structured_content", "structuredContent"):
+            if raw.get(key) is not None:
+                return parse_tool_result(raw[key])
+
+        if raw.get("type") == "text" and isinstance(raw.get("text"), str):
+            return parse_tool_result(raw["text"])
+
+        payload_keys = {"project", "stats", "matched", "candidates", "listings"}
+        if "content" in raw and not (payload_keys & set(raw)):
+            return parse_tool_result(raw["content"])
+        return raw
+
     if not isinstance(raw, list):
         return raw  # Đã là dict/str — adapters version khác có thể trả thẳng.
 

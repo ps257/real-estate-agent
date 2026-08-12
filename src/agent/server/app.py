@@ -16,12 +16,14 @@ except Exception:
     pass
 
 import json
+import secrets
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
+from starlette.responses import JSONResponse
 
 from agent.config import get_settings
 from agent.openai_compat import (
@@ -33,7 +35,17 @@ from agent.runner import run_once, run_stream
 
 _settings = get_settings()
 
-app = FastAPI(title="Real Estate Market Intelligence Agent")
+
+class UTF8JSONResponse(JSONResponse):
+    """Declare UTF-8 explicitly for clients that do not follow the JSON default."""
+
+    media_type = "application/json; charset=utf-8"
+
+
+app = FastAPI(
+    title="Real Estate Market Intelligence Agent",
+    default_response_class=UTF8JSONResponse,
+)
 
 # CORS — cho frontend (domain khác) gọi được. Cấu hình qua CORS_ALLOW_ORIGINS.
 app.add_middleware(
@@ -53,7 +65,7 @@ async def require_api_key(authorization: str | None = Header(default=None)) -> N
     if not keys:  # dev/local: không bắt buộc
         return
     token = (authorization or "").removeprefix("Bearer ").strip()
-    if token not in keys:
+    if not any(secrets.compare_digest(token, key) for key in keys):
         raise HTTPException(
             status_code=401,
             detail={"error": {"message": "Invalid API key", "type": "invalid_request_error",
@@ -82,17 +94,29 @@ class ChatRequest(BaseModel):
 
 
 @app.post("/chat")
-async def chat(req: ChatRequest) -> dict:
+async def chat(req: ChatRequest, _: None = Depends(require_api_key)) -> dict:
     """Non-stream: chạy graph tới END, trả full JSON (native shape)."""
-    return await run_once(_get_graph(), req.message, req.thread_id)
+    return await run_once(
+        _get_graph(),
+        req.message,
+        req.thread_id,
+        include_reasoning=_settings.expose_reasoning,
+    )
 
 
 @app.post("/chat/stream")
-async def chat_stream(req: ChatRequest) -> EventSourceResponse:
+async def chat_stream(
+    req: ChatRequest, _: None = Depends(require_api_key)
+) -> EventSourceResponse:
     """Stream: SSE mô phỏng OpenAI Realtime server events (kèm chain-of-thought)."""
 
     async def gen():
-        async for event in run_stream(_get_graph(), req.message, req.thread_id):
+        async for event in run_stream(
+            _get_graph(),
+            req.message,
+            req.thread_id,
+            include_reasoning=_settings.expose_reasoning,
+        ):
             # sse-starlette tự bọc `event:`/`data:`; ta cung cấp cả 2 field.
             yield {"event": event.type, "data": event.model_dump_json(exclude_none=True)}
 
@@ -136,11 +160,22 @@ async def openai_chat_completions(
     graph = _get_graph()
 
     if not req.stream:
-        payload = await run_once(graph, message, thread_id)
+        payload = await run_once(
+            graph,
+            message,
+            thread_id,
+            include_reasoning=_settings.expose_reasoning,
+        )
         return to_chat_completion(payload, req.model)
 
     async def gen():
-        async for chunk in stream_chat_completion_chunks(graph, message, thread_id, req.model):
+        async for chunk in stream_chat_completion_chunks(
+            graph,
+            message,
+            thread_id,
+            req.model,
+            include_reasoning=_settings.expose_reasoning,
+        ):
             # OpenAI stream framing: mỗi chunk là `data: <json>`, kết thúc bằng `data: [DONE]`.
             yield {"data": json.dumps(chunk, ensure_ascii=False)}
         yield {"data": "[DONE]"}
