@@ -23,8 +23,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Provider LLM — cài riêng cái bạn dùng (mặc định Anthropic/Claude).
-llm = ["langchain-anthropic>=1.5,<2.0"]
+# Provider LLM — cài riêng cái bạn dùng (mặc định OpenAI).
+# `openai` là SDK chính thức, dùng trực tiếp cho guardrail classifier
+# (structured outputs + timeout per-request). `langchain-openai` dành cho các
+# node LangGraph sắp làm (intent / entities / compose).
+llm = ["langchain-openai>=0.3,<1.0", "openai>=1.99"]
 dev = ["pytest>=8.3", "pytest-asyncio>=1.0", "httpx>=0.28"]
 
 [build-system]

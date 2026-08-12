@@ -21,12 +21,19 @@ class AgentState(TypedDict, total=False):
     user_input: str
     normalized_input: str  # sau normalize/guardrail
 
+    # Guardrail: None = hợp lệ. dict {code, message, suggestions} = out-of-scope
+    # (PRD mục "Out of scope") -> graph rẽ thẳng normalize → compose.
+    guardrail: dict[str, Any] | None
+
     # Hiểu ý định & thực thể.
     intent: str | None          # vd "US1_SEARCH"
     entities: dict[str, Any]     # thực thể trích được
     slots: dict[str, Any]        # slot đã điền cho skill hiện tại
     active_skill: str | None     # name của skill được chọn
     needs_clarification: bool    # có phải hỏi lại không
+    # Nội dung câu hỏi lại do conversation soạn: {prompt, suggestions}.
+    # None = compose tự dùng skill.clarify_prompt.
+    clarify: dict[str, Any] | None
 
     # Tool calling (MCP).
     tool_calls: list[dict[str, Any]]     # [{name, args}]
@@ -45,11 +52,16 @@ def new_state(user_input: str, thread_id: str) -> AgentState:
         thread_id=thread_id,
         user_input=user_input,
         normalized_input=user_input,
+        guardrail=None,
         intent=None,
         entities={},
-        slots={},
+        # CỐ Ý không đặt slots ở đây. slots không có reducer, nên truyền {} vào
+        # sẽ GHI ĐÈ slot mà checkpointer đang giữ từ lượt trước — hội thoại đa
+        # lượt ("đặt lịch đi" sau khi đã nói tên dự án) sẽ không bao giờ chạy.
+        # Vắng mặt trong dict input = LangGraph giữ nguyên giá trị đã checkpoint.
         active_skill=None,
         needs_clarification=False,
+        clarify=None,
         tool_calls=[],
         tool_results=[],
         actions=[],

@@ -11,9 +11,44 @@ nên KHÔNG cần chạy server thật để smoke-test.
 
 from __future__ import annotations
 
+import json
 from typing import Any, Protocol, runtime_checkable
 
 from agent.config import MCPConfig, get_settings
+
+
+def parse_tool_result(raw: Any) -> Any:
+    """Bóc content block của MCP thành dữ liệu Python.
+
+    `langchain-mcp-adapters` KHÔNG trả JSON đã parse — nó trả list content block
+    theo chuẩn MCP, với payload nằm trong chuỗi ``text``::
+
+        [{"type": "text", "text": '{"matched": false, "candidates": [...]}'}]
+
+    Không bóc lớp này thì mọi node phía sau nhận nhầm kiểu: ``isinstance(x, dict)``
+    luôn False, và ``x.get("id")`` lấy trúng id của content block chứ không phải
+    id nghiệp vụ.
+
+    Tool lỗi thì ``text`` là câu thông báo thường, không phải JSON — khi đó trả
+    nguyên chuỗi để caller tự xử lý (không raise, để một tool hỏng không làm
+    sập cả lượt chat).
+    """
+    if not isinstance(raw, list):
+        return raw  # Đã là dict/str — adapters version khác có thể trả thẳng.
+
+    texts = [
+        block["text"]
+        for block in raw
+        if isinstance(block, dict) and block.get("type") == "text" and "text" in block
+    ]
+    if not texts:
+        return raw  # image/resource block — trả nguyên, caller tự lo.
+
+    payload = "".join(texts)
+    try:
+        return json.loads(payload)
+    except (json.JSONDecodeError, TypeError):
+        return payload
 
 
 @runtime_checkable
@@ -52,8 +87,8 @@ class MCPClient:
         return list(self._tools)
 
     async def call_tool(self, name: str, args: dict[str, Any]) -> Any:
-        """Gọi một MCP tool và trả kết quả (dict / list / str tuỳ tool)."""
+        """Gọi một MCP tool và trả kết quả ĐÃ BÓC content block (dict / list / str)."""
         await self._ensure()
         if name not in self._tools:
             raise KeyError(f"MCP tool khong ton tai: {name!r}. Co: {list(self._tools)}")
-        return await self._tools[name].ainvoke(args)
+        return parse_tool_result(await self._tools[name].ainvoke(args))
