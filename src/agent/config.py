@@ -167,3 +167,24 @@ class Settings:
 def get_settings() -> Settings:
     """Trả về Settings mới (đọc lại env — tiện cho test)."""
     return Settings()
+
+def init_llm(model: str, temperature: float = 0.0):
+    import os
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
+    openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
+    
+    if openrouter_key or anthropic_key.startswith("sk-or-"):
+        key = openrouter_key or anthropic_key
+        from langchain_openai import ChatOpenAI
+        return ChatOpenAI(
+            model=model, 
+            temperature=temperature,
+            api_key=key,
+            base_url="https://openrouter.ai/api/v1"
+        )
+    elif "gemini" in model.lower():
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        return ChatGoogleGenerativeAI(model=model, temperature=temperature)
+    else:
+        from langchain_anthropic import ChatAnthropic
+        return ChatAnthropic(model=model, temperature=temperature)

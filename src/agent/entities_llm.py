@@ -57,6 +57,7 @@ class ExtractedEntities(BaseModel):
     min_area_m2: float | None = None
     max_area_m2: float | None = None
     listing_ids: list[str] | None = None
+    wants_amenities: bool | None = None
 
 
 _SYSTEM_PROMPT = """\
@@ -110,6 +111,8 @@ min_bedrooms=2; "tối đa 3 phòng" -> max_bedrooms=3).
 - min_area_m2 / max_area_m2: diện tích theo m2. "trên 80m2" -> min_area_m2=80.
 - listing_ids: mã căn khách nhắc tới, khi so sánh nhiều căn. Chỉ trích khi câu \
 có mã thật, không tự đặt mã.
+- wants_amenities: true khi khách muốn xem tiện ích/xung quanh dự án như trường học, \
+siêu thị, bệnh viện, công viên, thời gian di chuyển. Nếu không nhắc tới tiện ích thì null.
 
 LƯU Ý:
 - "chung cư"/"căn hộ" là property_type, KHÔNG phải project. "Vinhomes" là \
@@ -257,6 +260,9 @@ def sanitize(parsed: ExtractedEntities) -> dict:
         cleaned = [i.strip() for i in ids if isinstance(i, str) and i.strip()]
         if cleaned:
             out["listing_ids"] = cleaned
+
+    if parsed.wants_amenities is not None:
+        out["wants_amenities"] = parsed.wants_amenities
 
     return out
 

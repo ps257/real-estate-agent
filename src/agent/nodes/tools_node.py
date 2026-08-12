@@ -33,6 +33,15 @@ _SEARCH_FILTERS = (
     "max_area_m2",
 )
 
+_MAP_FILTERS = (
+    "property_type",
+    "bedrooms",
+    "min_bedrooms",
+    "max_bedrooms",
+    "min_price_vnd",
+    "max_price_vnd",
+)
+
 _MAX_SUGGESTIONS = 3
 
 
@@ -185,12 +194,45 @@ async def _us4_analytics(run: _ToolRun, slots: dict, state: AgentState) -> dict 
 
 async def _us5_map(run: _ToolRun, slots: dict, state: AgentState) -> dict | None:
     """US5 — bản đồ căn hộ."""
+    project_id = slots.get("project_id")
+    term = slots.get("project_or_province")
+
+    if not project_id and term:
+        resolved = await run.call("resolve_project", {"text": term})
+        if isinstance(resolved, dict) and resolved.get("matched"):
+            project_id = (resolved.get("project") or {}).get("id")
+        elif isinstance(resolved, dict) and resolved.get("candidates"):
+            candidates = resolved.get("candidates") or []
+            run.cot.append(f"tools: '{term}' khớp {len(candidates)} dự án -> hỏi lại bản đồ")
+            return {
+                "needs_clarification": True,
+                "clarify": {
+                    "prompt": f'Dạ có nhiều dự án khớp với "{term}". '
+                              "Anh/chị chọn giúp em dự án muốn xem bản đồ ạ?",
+                    "suggestions": _suggestions_from(candidates),
+                },
+            }
+
+    if not project_id:
+        run.cot.append("tools: thiếu project_id/project_or_province cho bản đồ")
+        return {
+            "needs_clarification": True,
+            "clarify": {
+                "prompt": "Dạ anh/chị muốn xem bản đồ của dự án nào ạ?",
+                "suggestions": [],
+            },
+        }
+
+    args = {
+        "project_id": project_id,
+        "limit": 200,
+        "include_amenities": bool(
+            slots.get("include_amenities", slots.get("wants_amenities", False))
+        ),
+    }
+    args.update({k: slots[k] for k in _MAP_FILTERS if slots.get(k) is not None})
     await run.call(
-        "map_listings",
-        {
-            "project_id": slots["project_id"],
-            "include_amenities": bool(slots.get("include_amenities", False)),
-        },
+        "map_listings", args
     )
     return None
 

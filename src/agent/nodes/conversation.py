@@ -34,6 +34,8 @@ _FILTER_KEYS = (
     "min_area_m2",
     "max_area_m2",
     "listing_ids",
+    "wants_amenities",
+    "include_amenities",
 )
 
 # Số gợi ý tối đa hiển thị khi hỏi lại (theo search-real-estate.md).
