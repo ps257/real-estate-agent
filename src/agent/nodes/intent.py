@@ -48,12 +48,16 @@ async def detect_intent(state: AgentState, ctx: NodeContext) -> dict:
     text = state.get("normalized_input") or state.get("user_input", "")
     cot = list(state.get("cot", []))
 
+    intent = state.get("intent_override")
+    source = "UI override"
+
     # Tầng 1: user bấm nút CTA -> nhãn khớp chính xác, khỏi tốn LLM call.
-    intent = match_cta_intent(text)
-    source = "cta"
+    if not intent:
+        intent = match_cta_intent(text)
+        source = "cta"
 
     # Tầng 2: LLM.
-    if intent is None and ctx.intent_llm is not None:
+    if not intent and ctx.intent_llm is not None:
         verdict = await ctx.intent_llm.classify(
             text, ctx.skills, history=_recent_user_messages(state)
         )

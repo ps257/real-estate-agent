@@ -154,6 +154,26 @@ class Settings:
     entities_llm_timeout: float = field(
         default_factory=lambda: float(os.getenv("ENTITIES_LLM_TIMEOUT", "10.0"))
     )
+
+    # --- Response Composition — xem agent/compose_llm.py ---
+    compose_llm_enabled: bool = field(
+        default_factory=lambda: os.getenv("COMPOSE_LLM_ENABLED", "true").lower()
+        not in ("false", "0", "no")
+    )
+    compose_llm_model: str = field(
+        default_factory=lambda: os.getenv("COMPOSE_LLM_MODEL")
+        or os.getenv("AGENT_LLM_MODEL", "gpt-5.6")
+    )
+    compose_llm_timeout: float = field(
+        default_factory=lambda: float(os.getenv("COMPOSE_LLM_TIMEOUT", "10.0"))
+    )
+    compose_persona: str = field(
+        default_factory=lambda: os.getenv(
+            "COMPOSE_PERSONA",
+            "Bạn là trợ lý bất động sản chuyên nghiệp, nhiệt tình và lịch sự. "
+            "Nhiệm vụ của bạn là sinh câu trả lời tự nhiên, thấu hiểu ngữ cảnh để giao tiếp với khách hàng dựa trên dữ liệu hệ thống cung cấp."
+        )
+    )
     host: str = field(default_factory=lambda: os.getenv("HOST", "127.0.0.1"))
     port: int = field(default_factory=lambda: int(os.getenv("PORT", "8000")))
     # Auth cho endpoint public: danh sách API key hợp lệ (rỗng = không yêu cầu).

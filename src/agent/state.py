@@ -20,6 +20,8 @@ class AgentState(TypedDict, total=False):
     # Input lượt hiện tại.
     user_input: str
     normalized_input: str  # sau normalize/guardrail
+    intent_override: str | None # intent ép buộc từ UI
+
 
     # Guardrail: None = hợp lệ. dict {code, message, suggestions} = out-of-scope
     # (PRD mục "Out of scope") -> graph rẽ thẳng normalize → compose.
@@ -45,13 +47,14 @@ class AgentState(TypedDict, total=False):
     response_text: str              # text trả lời cuối
 
 
-def new_state(user_input: str, thread_id: str) -> AgentState:
+def new_state(user_input: str, thread_id: str, intent_override: str | None = None) -> AgentState:
     """Khởi tạo state cho một lượt chat. [DONE]"""
     return AgentState(
         messages=[{"role": "user", "content": user_input}],
         thread_id=thread_id,
         user_input=user_input,
         normalized_input=user_input,
+        intent_override=intent_override,
         guardrail=None,
         intent=None,
         entities={},

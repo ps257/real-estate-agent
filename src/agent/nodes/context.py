@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from agent.entities_llm import EntityExtractor
 from agent.guardrail_llm import LLMGuardrail
 from agent.intent_llm import IntentClassifier
+from agent.compose_llm import ComposeLLM
 from agent.mcp.client import MCPProtocol
 from agent.skills.loader import SkillRegistry
 
@@ -26,3 +27,5 @@ class NodeContext:
     intent_llm: IntentClassifier | None = None
     # Entity extraction. None = trả entities rỗng, conversation sẽ hỏi lại.
     entities_llm: EntityExtractor | None = None
+    # Sinh văn bản trả lời tự nhiên. None = fallback về câu template cố định.
+    compose_llm: ComposeLLM | None = None

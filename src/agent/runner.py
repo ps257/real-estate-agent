@@ -44,23 +44,23 @@ def _final_payload(
 
 
 async def run_once(
-    graph, message: str, thread_id: str, *, include_reasoning: bool = False
+    graph, message: str, thread_id: str, *, intent_override: str | None = None, include_reasoning: bool = False
 ) -> dict[str, Any]:
     """Chạy graph, trả full JSON (non-stream)."""
     config = {"configurable": {"thread_id": thread_id}}
-    result = await graph.ainvoke(new_state(message, thread_id), config=config)
+    result = await graph.ainvoke(new_state(message, thread_id, intent_override=intent_override), config=config)
     return _final_payload(result, thread_id, include_reasoning=include_reasoning)
 
 
 async def run_stream(
-    graph, message: str, thread_id: str, *, include_reasoning: bool = False
+    graph, message: str, thread_id: str, *, intent_override: str | None = None, include_reasoning: bool = False
 ) -> AsyncIterator[Event]:
     """Chạy graph, yield chuỗi Event mô phỏng OpenAI Realtime server events."""
     response_id = f"resp_{uuid.uuid4().hex[:12]}"
     yield ResponseCreated(response_id=response_id, thread_id=thread_id)
 
     config = {"configurable": {"thread_id": thread_id}}
-    state = await graph.ainvoke(new_state(message, thread_id), config=config)
+    state = await graph.ainvoke(new_state(message, thread_id, intent_override=intent_override), config=config)
 
     # 1) Chain-of-thought.
     if include_reasoning:

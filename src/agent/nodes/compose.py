@@ -57,9 +57,7 @@ def _c_us1_search(results: list[dict], state: AgentState) -> tuple[str, list[dic
     if isinstance(ctas, dict) and ctas.get("ctas"):
         actions.append({"type": "cta", "items": ctas["ctas"]})
 
-    text = f"Dạ em tìm thấy {len(listings)} kết quả phù hợp ạ."
-    if len(listings) > 3:
-        text += ' Anh/chị bấm "Xem tất cả" để xem thêm nhé.'
+    text = f"Dạ em tìm thấy {len(listings)} kết quả phù hợp, đây là {min(len(listings), 10)} căn có giá tốt nhất ạ."
     return text, actions
 
 
@@ -79,30 +77,13 @@ def _c_form(tool: str, verb: str):
     return compose_form
 
 
-def _c_us3_policy(results: list[dict], state: AgentState) -> tuple[str, list[dict]]:
-    answer = _result(results, "answer_project_policy")
+def _c_us3_detail(results: list[dict], state: AgentState) -> tuple[str, list[dict]]:
+    listing = _result(results, "get_listing")
 
-    # RAG chưa bật (hoặc lỗi) -> TỪ CHỐI, không bịa. PRD: hallucination < 1%.
-    if not isinstance(answer, dict) or answer.get("available") is False:
-        return (
-            "Dạ phần hỏi đáp chính sách theo tài liệu dự án hiện chưa sẵn sàng ạ. "
-            "Em xin phép nối anh/chị với tư vấn viên để được trả lời chính xác ạ.",
-            [{"type": "clarify", "prompt": "Anh/chị muốn em nối tư vấn viên chứ ạ?",
-              "suggestions": [{"label": "Nối tư vấn viên", "intent": "US2_2_CONSULT"}]}],
-        )
+    if not isinstance(listing, dict):
+        return "Dạ em chưa lấy được chi tiết của căn hộ này ạ.", []
 
-    # Retrieval dưới ngưỡng -> cũng từ chối (quy tắc trong project-policy-rag.md).
-    if not answer.get("confident"):
-        return (
-            "Dạ thông tin này em chưa tìm thấy trong tài liệu của dự án ạ. "
-            "Em xin phép nối anh/chị với tư vấn viên để tránh trả lời sai ạ.",
-            [{"type": "clarify", "prompt": "Anh/chị muốn em nối tư vấn viên chứ ạ?",
-              "suggestions": [{"label": "Nối tư vấn viên", "intent": "US2_2_CONSULT"}]}],
-        )
-
-    return answer.get("answer", ""), [
-        {"type": "sources", "items": answer.get("sources", [])}
-    ]
+    return "", [{"type": "detail", "listing": listing}]
 
 
 def _c_us4_analytics(results: list[dict], state: AgentState) -> tuple[str, list[dict]]:
@@ -145,7 +126,7 @@ _COMPOSERS: dict[str, Callable[[list[dict], AgentState], tuple[str, list[dict]]]
     "US1_SEARCH": _c_us1_search,
     "US2_1_VISIT": _c_form("start_visit_booking", "đặt lịch tham quan"),
     "US2_2_CONSULT": _c_form("start_consultation", "được tư vấn mua nhà"),
-    "US3_POLICY": _c_us3_policy,
+    "US3_DETAIL": _c_us3_detail,
     "US4_ANALYTICS": _c_us4_analytics,
     "US5_MAP": _c_us5_map,
     "US6_COMPARE": _c_us6_compare,
@@ -160,48 +141,58 @@ async def compose(state: AgentState, ctx: NodeContext) -> dict:
     """
     cot = list(state.get("cot", []))
     actions: list[dict] = []
+    fallback_text = ""
+    intent = state.get("intent") or ""
 
     # 1) Guardrail: input out-of-scope -> từ chối lịch sự + gợi ý lối đi khác.
     guardrail = state.get("guardrail")
     if guardrail:
-        message = guardrail["message"]
+        fallback_text = guardrail["message"]
         actions.append({
             "type": "clarify",
-            "prompt": message,
+            "prompt": fallback_text,
             "suggestions": guardrail.get("suggestions", []),
         })
         cot.append(f"compose: từ chối theo guardrail '{guardrail['code']}'")
-        return {"response_text": message, "actions": actions, "cot": cot}
+        intent = "guardrail"
 
     # 2) Thiếu slot -> hỏi lại. conversation/tools soạn sẵn câu hỏi + gợi ý khi
     #    biết cụ thể thiếu gì; không có thì lùi về clarify_prompt của skill.
-    if state.get("needs_clarification"):
+    elif state.get("needs_clarification"):
         skill = ctx.skills.by_name(state.get("active_skill") or "")
         clarify = state.get("clarify") or {}
-        prompt = (
+        fallback_text = (
             clarify.get("prompt")
             or (skill.clarify_prompt if skill else None)
             or "Dạ anh/chị muốn tìm ở dự án nào ạ?"
         )
         actions.append({
             "type": "clarify",
-            "prompt": prompt,
+            "prompt": fallback_text,
             "suggestions": clarify.get("suggestions", []),
         })
         cot.append("compose: hỏi làm rõ slot")
-        return {"response_text": prompt, "actions": actions, "cot": cot}
+        intent = "clarify"
 
     # 3) Dựng câu trả lời theo intent.
-    intent = state.get("intent") or ""
-    composer = _COMPOSERS.get(intent)
-    if composer is None:
-        cot.append(f"compose: intent {intent!r} không có composer")
-        return {
-            "response_text": "Dạ em chưa hỗ trợ yêu cầu này ạ.",
-            "actions": [],
-            "cot": cot,
-        }
+    else:
+        composer = _COMPOSERS.get(intent)
+        if composer is None:
+            if intent in ("CHAT", "NONE"):
+                cot.append(f"compose: intent {intent!r} không có composer, nhường LLM tự trả lời")
+                fallback_text = ""
+            else:
+                cot.append(f"compose: intent {intent!r} không có composer")
+                fallback_text = "Dạ em chưa hỗ trợ yêu cầu này ạ."
+        else:
+            fallback_text, actions = composer(state.get("tool_results", []), state)
+            cot.append(f"compose: dựng {[a['type'] for a in actions] or 'text'} cho {intent}")
 
-    text, actions = composer(state.get("tool_results", []), state)
-    cot.append(f"compose: dựng {[a['type'] for a in actions] or 'text'} cho {intent}")
+    # Gọi ComposeLLM để sinh văn bản tự nhiên, nếu có
+    if ctx.compose_llm:
+        text = await ctx.compose_llm.compose_text(state, intent, actions, fallback_text)
+        cot.append(f"compose: dùng LLM sinh text cho {intent}")
+    else:
+        text = fallback_text
+
     return {"response_text": text, "actions": actions, "cot": cot}

@@ -44,6 +44,7 @@ def build_graph(
     guardrail_llm=None,
     intent_llm=None,
     entities_llm=None,
+    compose_llm=None,
     checkpointer=None,
 ):
     """Trả về graph đã compile. Bind NodeContext vào từng node qua partial.
@@ -60,6 +61,7 @@ def build_graph(
         guardrail_llm=guardrail_llm,
         intent_llm=intent_llm,
         entities_llm=entities_llm,
+        compose_llm=compose_llm,
     )
 
     g = StateGraph(AgentState)
@@ -95,6 +97,7 @@ def build_default_graph():
     from agent.entities_llm import build_entity_extractor
     from agent.guardrail_llm import build_guardrail_llm
     from agent.intent_llm import build_intent_classifier
+    from agent.compose_llm import build_compose_llm
 
     settings = get_settings()
     skills = SkillRegistry.load(settings.skills_dir)
@@ -106,4 +109,5 @@ def build_default_graph():
         guardrail_llm=build_guardrail_llm(settings),
         intent_llm=build_intent_classifier(settings),
         entities_llm=build_entity_extractor(settings),
+        compose_llm=build_compose_llm(settings),
     )

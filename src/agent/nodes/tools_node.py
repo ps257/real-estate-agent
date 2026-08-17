@@ -161,28 +161,16 @@ async def _us2_2_consult(run: _ToolRun, slots: dict, state: AgentState) -> dict 
     return None
 
 
-async def _us3_policy(run: _ToolRun, slots: dict, state: AgentState) -> dict | None:
-    """US3 — hỏi đáp chính sách (RAG).
+async def _us3_detail(run: _ToolRun, slots: dict, state: AgentState) -> dict | None:
+    """US3 — xem chi tiết căn hộ."""
+    listing_ids = slots.get("listing_ids")
+    
+    if not listing_ids or not isinstance(listing_ids, list):
+        run.cot.append("tools: thiếu listing_ids")
+        return None
 
-    ``answer_project_policy`` đang DISABLED phía MCP (raise ToolError). Bắt lỗi
-    và ghi ``{"available": False}`` để compose trả lời "chưa có trong tài liệu"
-    + đề nghị nối tư vấn viên — đúng yêu cầu hallucination < 1% của PRD: thà
-    từ chối còn hơn bịa.
-    """
-    question = state.get("normalized_input") or state.get("user_input", "")
-    args = {"project_id": slots["project_id"], "question": question}
-    try:
-        await run.call("answer_project_policy", args)
-    except PermissionError:
-        raise  # allow-list là lỗi cấu hình skill, phải lộ ra.
-    except Exception as exc:  # noqa: BLE001 — tool disabled là trạng thái ĐÃ BIẾT.
-        logger.info("US3: answer_project_policy không dùng được: %s", exc)
-        run.calls.append({"name": "answer_project_policy", "args": args})
-        run.results.append({
-            "name": "answer_project_policy",
-            "result": {"available": False, "reason": str(exc)[:200]},
-        })
-        run.cot.append("tools: RAG chưa bật -> trả lời 'chưa có trong tài liệu'")
+    args = {"listing_id": listing_ids[0]}
+    await run.call("get_listing", args)
     return None
 
 
@@ -196,8 +184,9 @@ async def _us5_map(run: _ToolRun, slots: dict, state: AgentState) -> dict | None
     """US5 — bản đồ căn hộ."""
     project_id = slots.get("project_id")
     term = slots.get("project_or_province")
+    listing_ids = slots.get("listing_ids")
 
-    if not project_id and term:
+    if not project_id and not listing_ids and term:
         resolved = await run.call("resolve_project", {"text": term})
         if isinstance(resolved, dict) and resolved.get("matched"):
             project_id = (resolved.get("project") or {}).get("id")
@@ -213,8 +202,8 @@ async def _us5_map(run: _ToolRun, slots: dict, state: AgentState) -> dict | None
                 },
             }
 
-    if not project_id:
-        run.cot.append("tools: thiếu project_id/project_or_province cho bản đồ")
+    if not project_id and not listing_ids:
+        run.cot.append("tools: thiếu project_id/listing_ids/project_or_province cho bản đồ")
         return {
             "needs_clarification": True,
             "clarify": {
@@ -225,6 +214,7 @@ async def _us5_map(run: _ToolRun, slots: dict, state: AgentState) -> dict | None
 
     args = {
         "project_id": project_id,
+        "listing_ids": listing_ids,
         "limit": 200,
         "include_amenities": bool(
             slots.get("include_amenities", slots.get("wants_amenities", False))
@@ -266,7 +256,7 @@ _HANDLERS: dict[str, Callable[[_ToolRun, dict, AgentState], Awaitable[dict | Non
     "US1_SEARCH": _us1_search,
     "US2_1_VISIT": _us2_1_visit,
     "US2_2_CONSULT": _us2_2_consult,
-    "US3_POLICY": _us3_policy,
+    "US3_DETAIL": _us3_detail,
     "US4_ANALYTICS": _us4_analytics,
     "US5_MAP": _us5_map,
     "US6_COMPARE": _us6_compare,

@@ -91,6 +91,7 @@ def _get_graph():
 class ChatRequest(BaseModel):
     message: str
     thread_id: str = "default"
+    intent: str | None = None
 
 
 @app.post("/chat")
@@ -100,6 +101,7 @@ async def chat(req: ChatRequest, _: None = Depends(require_api_key)) -> dict:
         _get_graph(),
         req.message,
         req.thread_id,
+        intent_override=req.intent,
         include_reasoning=_settings.expose_reasoning,
     )
 
@@ -115,6 +117,7 @@ async def chat_stream(
             _get_graph(),
             req.message,
             req.thread_id,
+            intent_override=req.intent,
             include_reasoning=_settings.expose_reasoning,
         ):
             # sse-starlette tự bọc `event:`/`data:`; ta cung cấp cả 2 field.
