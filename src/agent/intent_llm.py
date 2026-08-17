@@ -93,8 +93,8 @@ trước nếu tin nhắn mới rõ ràng hướng khác.
    - Hỏi THÔNG TIN dự án (chính sách, pháp lý, tiện ích, quy định) → US3_POLICY.
    - Hỏi SỐ LIỆU tổng hợp (bao nhiêu căn, giá trung bình, phân bố loại hình) \
 → US4_ANALYTICS.
-   - Hỏi DANH SÁCH căn cụ thể để xem → US1_SEARCH.
-   - Đặt lịch ĐI XEM tận nơi → US2_1_VISIT. Xin người TƯ VẤN → US2_2_CONSULT.
+   - Nhu cầu TÌM MUA NHÀ, hỏi DANH SÁCH căn, hoặc đưa ra tiêu chí (giá, phòng ngủ) → US1_SEARCH.
+   - CHỦ ĐỘNG yêu cầu Đặt lịch ĐI XEM tận nơi → US2_1_VISIT. CHỦ ĐỘNG yêu cầu xin người TƯ VẤN → US2_2_CONSULT.
    - So sánh từ 2 căn trở lên → US6_COMPARE. Xem vị trí trên bản đồ → US5_MAP.
 4. Chào hỏi, cảm ơn, chuyện phiếm, hoặc không rõ ý → {fallback}.
 
