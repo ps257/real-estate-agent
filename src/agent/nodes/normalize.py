@@ -33,6 +33,15 @@ _REPEAT_PUNCT = re.compile(r"([!?.,;:])\1+")
 # ("5000000" phải giữ nguyên) — đó là lý do dùng [^\W\d_] thay vì \w.
 _REPEAT_CHAR = re.compile(r"([^\W\d_])\1{2,}")
 
+# Câu phân tích dự án rõ ràng đã nằm trong phạm vi sản phẩm. Regex guardrail
+# out-of-scope vẫn chạy trước; chỉ bỏ LLM guardrail phụ để giảm một network call.
+_CLEAR_IN_SCOPE_ANALYTICS = re.compile(
+    r"(?:phân tích tổng quan|thống kê (?:giá|diện tích)|giá trung bình|"
+    r"diện tích trung bình|bao nhiêu căn|khoảng giá|cơ cấu loại hình|"
+    r"nguồn giá|giá chào bán|giá ước tính)",
+    re.IGNORECASE,
+)
+
 # Viết tắt dính số: xử lý trước vì "2pn" không tách được bằng ranh giới từ.
 _STICKY_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"(?<!\w)(\d+)\s*pn(?!\w)", re.IGNORECASE), r"\1 phòng ngủ"),
@@ -260,7 +269,8 @@ async def normalize(state: AgentState, ctx: NodeContext) -> dict:
 
     # Tầng 2: LLM classifier — CHỈ chạy khi tầng 1 không bắt được, nên phần lớn
     # request không tốn thêm latency. Fail-open: lỗi/timeout -> trả None -> cho qua.
-    if rule is None and ctx.guardrail_llm is not None:
+    clear_analytics = bool(_CLEAR_IN_SCOPE_ANALYTICS.search(text))
+    if rule is None and ctx.guardrail_llm is not None and not clear_analytics:
         verdict = await ctx.guardrail_llm.classify(text)
         if verdict is not None:
             rule = _RULES_BY_CODE.get(verdict.code)
@@ -278,7 +288,9 @@ async def normalize(state: AgentState, ctx: NodeContext) -> dict:
             "cot": cot,
         }
 
-    tiers = "regex" if ctx.guardrail_llm is None else "regex+llm"
+    tiers = "regex (fast-path analytics)" if clear_analytics else (
+        "regex" if ctx.guardrail_llm is None else "regex+llm"
+    )
     cot.append(f"guardrail: pass (trong phạm vi hỗ trợ) [{tiers}]")
     # Trả None tường minh để xoá guardrail còn sót từ lượt trước (checkpointer
     # giữ state theo thread_id, không tự reset field này).
