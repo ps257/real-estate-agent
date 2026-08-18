@@ -71,10 +71,34 @@ def _ctx_with(skills, null_mcp, fake) -> NodeContext:
 
 
 async def test_khong_co_llm_thi_fallback(ctx):
-    """intent_llm=None (test/thiếu key) -> fallback, không lỗi."""
-    out = await detect_intent(new_state("Tôi muốn tìm căn hộ", "t1"), ctx)
+    """Không có LLM và không khớp rule -> UNKNOWN, không gắn skill tìm nhà."""
+    out = await detect_intent(new_state("Yêu cầu bất động sản chưa rõ", "t1"), ctx)
     assert out["intent"] == FALLBACK_INTENT
+    assert out["active_skill"] is None
+
+
+async def test_tim_can_ho_dung_fast_path_khong_goi_llm(skills, null_mcp):
+    fake = FakeIntentLLM(None)
+    out = await detect_intent(
+        new_state("Tôi muốn tìm căn hộ Vinhomes 2 phòng ngủ", "t1"),
+        _ctx_with(skills, null_mcp, fake),
+    )
+
+    assert out["intent"] == "US1_SEARCH"
     assert out["active_skill"] == "search-real-estate"
+    assert fake.calls == []
+
+
+async def test_tien_ich_gan_du_an_routes_to_map_without_llm(skills, null_mcp):
+    fake = FakeIntentLLM(None)
+    out = await detect_intent(
+        new_state("Tìm quán ăn gần dự án Vinhomes Ocean Park", "t1"),
+        _ctx_with(skills, null_mcp, fake),
+    )
+
+    assert out["intent"] == "US5_MAP"
+    assert out["active_skill"] == "map-view"
+    assert fake.calls == []
 
 
 async def test_cta_khong_goi_llm(skills, null_mcp):
@@ -92,7 +116,7 @@ async def test_llm_quyet_dinh(skills, null_mcp):
         IntentVerdict(intent="US6_COMPARE", confidence=0.93, reason="so sánh 2 căn")
     )
     out = await detect_intent(
-        new_state("So sánh giúp em căn A với căn B", "t1"), _ctx_with(skills, null_mcp, fake)
+        new_state("Đặt hai lựa chọn cạnh nhau giúp em", "t1"), _ctx_with(skills, null_mcp, fake)
     )
 
     assert out["intent"] == "US6_COMPARE"
@@ -101,12 +125,12 @@ async def test_llm_quyet_dinh(skills, null_mcp):
 
 
 async def test_llm_tra_none_thi_fallback(skills, null_mcp):
-    """classify() trả None (lỗi/timeout/nhãn lạ) -> fallback, không crash."""
+    """classify() trả None -> UNKNOWN và không gọi nhầm skill tìm nhà."""
     fake = FakeIntentLLM(None)
     out = await detect_intent(new_state("abcxyz", "t1"), _ctx_with(skills, null_mcp, fake))
 
     assert out["intent"] == FALLBACK_INTENT
-    assert out["active_skill"] == "search-real-estate"
+    assert out["active_skill"] is None
     assert "fallback" in out["cot"][-1]
 
 
@@ -131,7 +155,7 @@ async def test_nhan_lay_tu_catalog(ctx):
     intents = set(known_intents(ctx))
     assert intents == {
         "US1_SEARCH", "US2_1_VISIT", "US2_2_CONSULT",
-        "US3_POLICY", "US4_ANALYTICS", "US5_MAP", "US6_COMPARE",
+        "US3_DETAIL", "US4_ANALYTICS", "US5_MAP", "US6_COMPARE",
     }
 
 

@@ -145,17 +145,30 @@ def ctx(skills, null_mcp) -> NodeContext:
     return NodeContext(skills=skills, mcp=null_mcp)
 
 
-async def test_khong_co_llm_thi_rong(ctx):
-    """entities_llm=None -> {} chứ không lỗi; conversation sẽ hỏi lại."""
+async def test_khong_co_llm_van_bat_ten_vinhomes_ro_rang(ctx):
     out = await extract_entities(new_state("Tìm căn hộ Vinhomes", "t1"), ctx)
-    assert out["entities"] == {}
-    assert "LLM tắt" in out["cot"][-1]
+    assert out["entities"] == {"project": "Vinhomes"}
+    assert "rule" in out["cot"][-1]
+
+
+async def test_llm_loi_van_lay_project_phong_ngu_va_tien_ich(skills, null_mcp):
+    ctx = NodeContext(skills=skills, mcp=null_mcp, entities_llm=FakeEntitiesLLM(None))
+    state = new_state("Tìm quán ăn gần dự án Vinhomes Ocean Park 2 phòng ngủ", "t1")
+
+    out = await extract_entities(state, ctx)
+
+    assert out["entities"] == {
+        "project": "Vinhomes Ocean Park",
+        "bedrooms": 2,
+        "wants_amenities": True,
+        "include_amenities": True,
+    }
 
 
 async def test_llm_tra_ket_qua(skills, null_mcp):
     fake = FakeEntitiesLLM({"project": "Vinhomes Global Gate", "bedrooms": 2})
     ctx = NodeContext(skills=skills, mcp=null_mcp, entities_llm=fake)
-    state = new_state("Tìm căn 2 phòng ngủ ở Vinhomes Global Gate", "t1")
+    state = new_state("Tìm một lựa chọn phù hợp giúp tôi", "t1")
     state["intent"] = "US1_SEARCH"
 
     out = await extract_entities(state, ctx)

@@ -11,6 +11,7 @@ nên KHÔNG cần chạy server thật để smoke-test.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any, Protocol, runtime_checkable
 
@@ -94,17 +95,25 @@ class MCPClient:
         self._config = config or get_settings().mcp
         self._client: Any = None            # MultiServerMCPClient
         self._tools: dict[str, Any] = {}    # name -> BaseTool (từ adapters)
+        self._init_lock = asyncio.Lock()
 
     async def _ensure(self) -> None:
-        if self._client is not None:
+        if self._client is not None and self._tools:
             return
-        # Import trong hàm để môi trường test không bắt buộc cài adapters.
-        from langchain_mcp_adapters.client import MultiServerMCPClient
+        async with self._init_lock:
+            if self._client is not None and self._tools:
+                return
 
-        # server_spec() tự chọn stdio (spawn) hoặc http (server đã host) theo config.
-        self._client = MultiServerMCPClient({"real_estate": self._config.server_spec()})
-        tools = await self._client.get_tools()
-        self._tools = {t.name: t for t in tools}
+            # Import trong hàm để môi trường test không bắt buộc cài adapters.
+            from langchain_mcp_adapters.client import MultiServerMCPClient
+
+            # Dựng vào biến local và chỉ publish sau khi get_tools hoàn tất. Nếu
+            # publish client trước await, request đồng thời có thể thấy tools={}
+            # rồi báo sai "tool không tồn tại".
+            client = MultiServerMCPClient({"real_estate": self._config.server_spec()})
+            tools = await client.get_tools()
+            self._tools = {t.name: t for t in tools}
+            self._client = client
 
     async def list_tools(self) -> list[str]:
         """Tên các tool server MCP cung cấp."""

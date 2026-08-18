@@ -141,36 +141,36 @@ async def test_form_us2(skills, intent, skill, tool):
     assert "Vinhomes Global Gate" in composed["response_text"]
 
 
-# ------------------------------------------------------------- US3
+# ------------------------------------------------------------- US3 detail
 
-async def test_us3_rag_disabled_thi_tu_choi_khong_bia(skills):
-    """answer_project_policy đang disabled -> phải từ chối + nối tư vấn viên."""
-    mcp = StubMCP(raises={"answer_project_policy"})
-    out, composed = await _run(skills, mcp, "US3_POLICY", "project-policy-rag",
-                               {"project_id": "vhm:gg"})
+async def test_us3_detail_goi_get_listing_va_tra_action(skills):
+    mcp = StubMCP({"get_listing": LISTING})
+    out, composed = await _run(
+        skills, mcp, "US3_DETAIL", "listing_detail", {"listing_ids": ["vhm:l1"]}
+    )
 
-    assert out["tool_results"][0]["result"]["available"] is False
-    assert "tư vấn viên" in composed["response_text"]
-    assert composed["actions"][0]["type"] == "clarify"
-
-
-async def test_us3_retrieval_duoi_nguong_thi_tu_choi(skills):
-    """confident=False -> vẫn từ chối (PRD: hallucination < 1%)."""
-    mcp = StubMCP({"answer_project_policy": {
-        "answer": "Có thể là...", "sources": [], "confident": False}})
-    _, composed = await _run(skills, mcp, "US3_POLICY", "project-policy-rag",
-                             {"project_id": "vhm:gg"})
-    assert "chưa tìm thấy trong tài liệu" in composed["response_text"]
+    assert out["tool_calls"] == [
+        {"name": "get_listing", "args": {"listing_id": "vhm:l1"}}
+    ]
+    assert composed["actions"] == [{"type": "detail", "listing": LISTING}]
 
 
-async def test_us3_confident_thi_tra_loi(skills):
-    mcp = StubMCP({"answer_project_policy": {
-        "answer": "Dự án cho nuôi thú cưng.",
-        "sources": [{"doc_id": "d1"}], "confident": True}})
-    _, composed = await _run(skills, mcp, "US3_POLICY", "project-policy-rag",
-                             {"project_id": "vhm:gg"})
-    assert composed["response_text"] == "Dự án cho nuôi thú cưng."
-    assert composed["actions"][0]["type"] == "sources"
+async def test_us3_detail_thieu_listing_id_khong_goi_mcp(skills):
+    mcp = StubMCP()
+    out, composed = await _run(skills, mcp, "US3_DETAIL", "listing_detail", {})
+
+    assert out["tool_calls"] == []
+    assert "chưa lấy được chi tiết" in composed["response_text"]
+
+
+async def test_us3_detail_tool_khong_co_du_lieu_thi_fallback(skills):
+    mcp = StubMCP({"get_listing": None})
+    _, composed = await _run(
+        skills, mcp, "US3_DETAIL", "listing_detail", {"listing_ids": ["vhm:missing"]}
+    )
+
+    assert "chưa lấy được chi tiết" in composed["response_text"]
+    assert composed["actions"] == []
 
 
 # ------------------------------------------------------ US4 / US5
@@ -187,6 +187,20 @@ async def test_us5_map(skills):
     _, composed = await _run(skills, mcp, "US5_MAP", "map-view", {"project_id": "vhm:gg"})
     assert mcp.calls[0][1]["include_amenities"] is False
     assert composed["actions"][0]["type"] == "map"
+
+
+async def test_us5_amenities_khong_co_du_lieu_thi_bao_ro(skills):
+    mcp = StubMCP({"map_listings": {"points": [{"lat": 21.0, "lng": 105.8}]}})
+    _, composed = await _run(
+        skills,
+        mcp,
+        "US5_MAP",
+        "map-view",
+        {"project_id": "vhm:gg", "include_amenities": True},
+    )
+
+    assert mcp.calls[0][1]["include_amenities"] is True
+    assert "chưa lấy được danh sách tiện ích lân cận" in composed["response_text"]
 
 
 # ------------------------------------------------------------- US6

@@ -61,12 +61,34 @@ def test_guardrail_chan_out_of_scope(text, code):
 @pytest.mark.parametrize(
     "text",
     [
+        "Tôi muốn tìm đồ ăn",
+        "Tôi muốn tìm quán ăn",
+        "Thời tiết Hà Nội hôm nay thế nào?",
+        "Viết cho tôi một đoạn code Python",
+        "Đặt vé máy bay đi Đà Nẵng",
+    ],
+)
+def test_guardrail_chan_chu_de_ngoai_bat_dong_san(text):
+    rule = check_guardrail(normalize_text(text))
+    assert rule is not None and rule.code == "out_of_domain"
+
+
+@pytest.mark.parametrize("text", ["Xin chào", "Cảm ơn bạn", "Tạm biệt", "hello"])
+def test_guardrail_smalltalk_dung_som(text):
+    rule = check_guardrail(normalize_text(text))
+    assert rule is not None and rule.code == "smalltalk"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
         "Tôi muốn tìm căn hộ Vinhomes",
         "Chủ đầu tư dự án Vinhomes là ai?",          # "chủ đầu tư" != "đầu tư"
         "Chính sách trả góp của dự án là gì?",        # hỏi *về* chính sách -> US3
         "Quy trình đặt cọc của dự án ra sao?",        # ditto
         "Cho em xem giá các căn 2PN",                 # "giá" thường != "định giá"
         "Dự án đã bàn giao rồi phải không?",          # "rồi" -> "roi", không dính rule
+        "Tìm quán ăn gần dự án Vinhomes Ocean Park", # tiện ích quanh dự án là hợp lệ
     ],
 )
 def test_guardrail_khong_bat_nham(text):
@@ -155,20 +177,43 @@ async def test_tang2_khong_chay_khi_tang1_da_bat(skills, null_mcp):
 
 
 async def test_tang2_cho_qua_khi_hop_le(skills, null_mcp):
-    """classify() trả None (hợp lệ / dưới ngưỡng / lỗi) -> request đi tiếp."""
-    fake = FakeGuardrailLLM(None)
+    """Verdict in_scope từ LLM cho request đi tiếp."""
+    fake = FakeGuardrailLLM(
+        GuardrailVerdict(code="in_scope", confidence=0.9, reason="tiện ích nơi ở")
+    )
     out = await normalize(
-        new_state("Tìm căn hộ Vinhomes", "t1"), _ctx_with(skills, null_mcp, fake)
+        new_state("Khu này có tiện để sinh sống không?", "t1"), _ctx_with(skills, null_mcp, fake)
     )
 
     assert out["guardrail"] is None
-    assert fake.calls == ["Tìm căn hộ Vinhomes"]
+    assert fake.calls == ["Khu này có tiện để sinh sống không?"]
+
+
+async def test_tang2_loi_thi_hoi_lai_an_toan(skills, null_mcp):
+    fake = FakeGuardrailLLM(None)
+    out = await normalize(
+        new_state("giúp tôi việc này", "t1"), _ctx_with(skills, null_mcp, fake)
+    )
+
+    assert out["guardrail"]["code"] == "unknown_scope"
+    assert fake.calls == ["giúp tôi việc này"]
 
 
 async def test_tang2_bo_qua_khi_khong_cau_hinh(ctx):
-    """ctx.guardrail_llm=None (test/thiếu key) -> chỉ chạy regex, không lỗi."""
+    """Thiếu classifier và không có tín hiệu BĐS -> hỏi lại an toàn."""
     out = await normalize(new_state("Bỏ tiền vào đây ổn không?", "t1"), ctx)
+    assert out["guardrail"]["code"] == "unknown_scope"
+
+
+async def test_tin_hieu_bds_ro_rang_khong_can_guardrail_llm(skills, null_mcp):
+    fake = FakeGuardrailLLM(None)
+    out = await normalize(
+        new_state("Tìm căn hộ Vinhomes 2 phòng ngủ", "t1"),
+        _ctx_with(skills, null_mcp, fake),
+    )
+
     assert out["guardrail"] is None
+    assert fake.calls == []
 
 
 # ------------------------------------------------------------- LLMGuardrail

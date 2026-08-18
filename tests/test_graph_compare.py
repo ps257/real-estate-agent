@@ -28,7 +28,7 @@ async def test_compare_happy_path(skills, mock_mcp):
     assert "cta" in action_types
 
     compare_action = next(a for a in result["actions"] if a["type"] == "compare")
-    data = compare_action["data"]
+    data = compare_action["comparison"]
 
     # Danh sách căn phải được sort theo giá tăng dần: lc_1 (2 tỷ) trước lc_2 (3.5 tỷ)
     listings = data["listings"]
