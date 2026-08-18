@@ -35,6 +35,7 @@ GuardrailCode = Literal[
     "investment",
     "financial",
     "transaction",
+    "unrelated",
     "in_scope",
 ]
 
@@ -62,6 +63,8 @@ lướt sóng, sinh lời, tỷ suất lợi nhuận, dự báo giá lên/xuốn
 - financial — nhờ tính toán vay/trả góp/lãi suất/ân hạn gốc, mô phỏng khoản vay.
 - transaction — muốn đặt cọc, thanh toán trực tuyến, chuyển khoản, ký hợp đồng \
 điện tử ngay trong cuộc trò chuyện.
+- unrelated — hỏi những câu lạc đề, chuyện phiếm không liên quan, nhờ làm toán, \
+viết code, hỏi thời tiết, hoặc bất cứ chủ đề nào nằm ngoài lĩnh vực bất động sản.
 
 NHÃN HỢP LỆ:
 
@@ -77,7 +80,8 @@ sách trả góp của dự án là gì?" (in_scope) với "tính giúp tôi tr�
 tư. "Chủ đầu tư dự án X là ai?" là in_scope.
 3. Tra cứu BĐS, hỏi giá rao bán, so sánh thông số các căn, xem bản đồ, xem tiện \
 ích, đặt lịch tham quan, xin tư vấn viên đều là in_scope.
-4. Chào hỏi, cảm ơn, hoặc chuyện phiếm vô hại là in_scope.
+4. Chào hỏi cơ bản ("chào em", "xin chào") hoặc cảm ơn ("cảm ơn em") là in_scope. \
+Nhưng nếu yêu cầu làm việc khác (thời tiết, giải trí, kiến thức chung) thì là unrelated.
 5. Phân vân về CHỦ ĐỀ (không rõ khách đang hỏi gì) thì chọn in_scope — chặn nhầm \
 câu hợp lệ tệ hơn bỏ lọt. NHƯNG nếu ý định đã rõ mà chỉ diễn đạt vòng vo, hãy gán \
 đúng nhãn: nói lóng không biến một câu ngoài phạm vi thành in_scope.

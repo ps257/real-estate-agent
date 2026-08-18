@@ -18,12 +18,8 @@ logger = logging.getLogger(__name__)
 _SYSTEM_PROMPT = """\
 {persona}
 
-Nhiệm vụ của bạn là đóng vai trợ lý và soạn một câu trả lời ngắn gọn, tự nhiên để giao tiếp với khách hàng. 
-Hệ thống đã chuẩn bị sẵn các thành phần giao diện (UI) để hiển thị cho khách (ví dụ: thẻ danh sách căn, bản đồ, form điền thông tin).
-Bạn KHÔNG CẦN mô tả chi tiết từng dữ liệu nếu UI đã hiển thị, chỉ cần:
-- Chào hỏi hoặc phản hồi lại cảm xúc/ngữ cảnh của khách.
-- Dựa vào Hướng dẫn của Hệ thống (System Guidance) bên dưới để biết nên nói gì chính.
-- Dẫn dắt khách hàng xem phần UI bên dưới hoặc hỏi xem họ cần thêm gì không.
+Hệ thống đã chuẩn bị sẵn các thành phần giao diện (UI) để hiển thị dữ liệu cho khách (ví dụ: thẻ danh sách căn, bản đồ, form điền thông tin).
+Tùy vào vai trò (persona) của bạn, hãy quyết định mức độ chi tiết cần tư vấn. Nếu bạn đang đóng vai sale bán hàng, HÃY tận dụng tối đa dữ liệu hệ thống trả về (Tool Results) để viết lời giới thiệu, chào mời khách hàng một cách hấp dẫn, làm nổi bật điểm mạnh của căn hộ. Không cần quá tiết kiệm lời nếu bạn cần thuyết phục khách hàng.
 
 THÔNG TIN NGỮ CẢNH:
 - Ý định (Intent): {intent}
@@ -32,7 +28,7 @@ THÔNG TIN NGỮ CẢNH:
 - Kết quả từ hệ thống (Tool Results): {tool_results}
 
 Quy tắc:
-1. TRẢ LỜI BẰNG VĂN BẢN THƯỜNG (không JSON, không markdown phức tạp).
+1. TRẢ LỜI BẰNG VĂN BẢN THƯỜNG (không JSON, không dùng markdown quá phức tạp).
 2. Tôn trọng ngữ cảnh trò chuyện (lịch sử chat).
 3. KHÔNG "bịa" dữ liệu ngoài hệ thống trả về. Nếu hệ thống không có, hãy lịch sự báo không tìm thấy.
 """
@@ -75,10 +71,15 @@ class ComposeLLM:
         recent_messages = state.get("messages", [])[-5:]
         
         # Đóng gói ngữ cảnh
-        tool_results_summary = [
-            {"name": r["name"], "result_keys": list(r["result"].keys()) if isinstance(r["result"], dict) else "Data"}
-            for r in state.get("tool_results", [])
-        ]
+        tool_results_summary = []
+        for r in state.get("tool_results", []):
+            if r["name"] == "get_listing" and isinstance(r["result"], dict):
+                # Pass actual data so LLM can read price, area, bedrooms, etc.
+                tool_results_summary.append({"name": r["name"], "data": r["result"]})
+            elif isinstance(r["result"], dict):
+                tool_results_summary.append({"name": r["name"], "result_keys": list(r["result"].keys())})
+            else:
+                tool_results_summary.append({"name": r["name"], "result_keys": "Data"})
         actions_summary = [a["type"] for a in actions]
 
         system_content = _SYSTEM_PROMPT.format(

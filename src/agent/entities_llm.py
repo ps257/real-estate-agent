@@ -109,8 +109,7 @@ min_bedrooms=2; "tối đa 3 phòng" -> max_bedrooms=3).
   TUYỆT ĐỐI KHÔNG đặt min_price_vnd bằng max_price_vnd — khách sẽ không nhận
   được kết quả nào.
 - min_area_m2 / max_area_m2: diện tích theo m2. "trên 80m2" -> min_area_m2=80.
-- listing_ids: mã căn khách nhắc tới, khi so sánh nhiều căn. Chỉ trích khi câu \
-có mã thật, không tự đặt mã.
+- listing_ids: mã căn khách nhắc tới (để xem chi tiết, bản đồ, hoặc so sánh). Chỉ trích khi câu có mã thật, không tự đặt mã, VÀ PHẢI GIỮ NGUYÊN toàn bộ mã (bao gồm cả tiền tố như oh:, vhm: nếu có).
 - wants_amenities: true khi khách muốn xem tiện ích/xung quanh dự án như trường học, \
 siêu thị, bệnh viện, công viên, thời gian di chuyển. Nếu không nhắc tới tiện ích thì null.
 

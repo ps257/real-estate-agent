@@ -5,10 +5,7 @@ description: Hiển thị bản đồ căn hộ của dự án
 tools:
   - resolve_project
   - map_listings
-required_slots:
-  - project_or_province
-clarify_prompt: >
-  Dạ anh/chị muốn xem bản đồ của dự án nào ạ?
+
 ---
 
 # US5 — Bản đồ căn hộ  (STUB — TODO student)

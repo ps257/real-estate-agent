@@ -188,8 +188,8 @@ async def compose(state: AgentState, ctx: NodeContext) -> dict:
             fallback_text, actions = composer(state.get("tool_results", []), state)
             cot.append(f"compose: dựng {[a['type'] for a in actions] or 'text'} cho {intent}")
 
-    # Gọi ComposeLLM để sinh văn bản tự nhiên, nếu có
-    if ctx.compose_llm:
+    # Gọi ComposeLLM để sinh văn bản tự nhiên, nếu có (bỏ qua với guardrail/clarify vì đã có câu chuẩn)
+    if ctx.compose_llm and intent not in ("clarify", "guardrail"):
         text = await ctx.compose_llm.compose_text(state, intent, actions, fallback_text)
         cot.append(f"compose: dùng LLM sinh text cho {intent}")
     else:

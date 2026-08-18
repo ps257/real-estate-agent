@@ -211,6 +211,17 @@ _RULES: tuple[GuardrailRule, ...] = (
         ),
         exemptible=True,
     ),
+    GuardrailRule(
+        code="unrelated",
+        message=(
+            "Dạ em là chuyên viên tư vấn bất động sản nên chỉ có thể hỗ trợ anh/chị các thông tin "
+            "liên quan đến mua bán, tìm hiểu căn hộ và dự án thôi ạ. Anh/chị đang quan tâm "
+            "tới dự án nào để em tư vấn chi tiết hơn ạ?"
+        ),
+        patterns=(),
+        suggestions=_FALLBACK_SUGGESTIONS,
+        exemptible=False,
+    ),
 )
 
 
