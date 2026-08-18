@@ -13,6 +13,8 @@ file ``skills/catalog/*.md`` là có thêm một intent mà không phải sửa 
 
 from __future__ import annotations
 
+import re
+
 from agent.intent_llm import FALLBACK_INTENT, match_cta_intent
 from agent.nodes.context import NodeContext
 from agent.state import AgentState
@@ -20,6 +22,28 @@ from agent.state import AgentState
 # Số lượt user gần nhất đưa vào prompt để hiểu câu nói trống ("đặt lịch xem đi").
 # Đủ để bắt ngữ cảnh mà không thổi phồng token của mỗi request.
 _HISTORY_TURNS = 4
+
+_US4_PATTERNS = (
+    "phân tích tổng quan", "thống kê giá", "thống kê diện tích", "giá trung bình",
+    "diện tích trung bình", "bao nhiêu căn", "khoảng giá", "cơ cấu loại hình",
+    "nguồn giá", "giá chào bán", "giá ước tính",
+)
+
+
+def _match_domain_intent(text: str) -> str | None:
+    """Fast-path for unambiguous analytics/compare requests.
+
+    In particular, "so sánh nguồn giá chào bán và giá ước tính" is project
+    analytics, not a comparison between listings. US6 requires at least two
+    concrete listing IDs before the word "so sánh" can win this rule layer.
+    """
+    lowered = text.casefold()
+    listing_ids = re.findall(r"\b[a-z]{2,10}:[a-z0-9_-]+\b", lowered)
+    if len(set(listing_ids)) >= 2 and any(word in lowered for word in ("so sánh", "đối chiếu")):
+        return "US6_COMPARE"
+    if any(pattern in lowered for pattern in _US4_PATTERNS):
+        return "US4_ANALYTICS"
+    return None
 
 
 def _recent_user_messages(state: AgentState, limit: int = _HISTORY_TURNS) -> list[str]:
@@ -55,6 +79,11 @@ async def detect_intent(state: AgentState, ctx: NodeContext) -> dict:
     if not intent:
         intent = match_cta_intent(text)
         source = "cta"
+
+    # Tầng 1.5: các câu nghiệp vụ có dấu hiệu đủ rõ để không cần gọi LLM.
+    if not intent:
+        intent = _match_domain_intent(text)
+        source = "domain rule"
 
     # Tầng 2: LLM.
     if not intent and ctx.intent_llm is not None:
