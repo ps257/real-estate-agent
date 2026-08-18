@@ -134,8 +134,8 @@ class Settings:
         default_factory=lambda: os.getenv("INTENT_LLM_MODEL")
         or os.getenv("AGENT_LLM_MODEL", "gpt-5.6")
     )
-    # Hết giờ -> fallback US1_SEARCH, tức phân loại SAI mà không có lỗi nào báo
-    # ra. Đo thực tế: gpt-4o-mini p95 ~2s; gpt-5.6 (reasoning) p95 ~6s và chạm
+    # Hết giờ -> UNKNOWN và graph hỏi lại, không gọi MCP. Đo thực tế:
+    # gpt-4o-mini p95 ~2s; gpt-5.6 (reasoning) p95 ~6s và chạm
     # trần ở 6.0s. 10s để timeout là ngoại lệ thật, không phải chuyện thường ngày.
     intent_llm_timeout: float = field(
         default_factory=lambda: float(os.getenv("INTENT_LLM_TIMEOUT", "10.0"))

@@ -22,6 +22,7 @@ from agent.nodes.entities import extract_entities
 from agent.nodes.intent import detect_intent
 from agent.nodes.normalize import normalize
 from agent.nodes.tools_node import call_tools
+from agent.intent_llm import FALLBACK_INTENT
 from agent.skills.loader import SkillRegistry
 from agent.state import AgentState
 
@@ -29,6 +30,11 @@ from agent.state import AgentState
 def _route_after_normalize(state: AgentState) -> str:
     """Conditional edge: guardrail chặn → compose (từ chối); hợp lệ → intent."""
     return "compose" if state.get("guardrail") else "intent"
+
+
+def _route_after_intent(state: AgentState) -> str:
+    """Intent không xác định → hỏi lại, tuyệt đối không gọi entities/MCP."""
+    return "compose" if state.get("intent") == FALLBACK_INTENT else "entities"
 
 
 def _route_after_conversation(state: AgentState) -> str:
@@ -51,7 +57,7 @@ def build_graph(
 
     checkpointer=None  → MemorySaver (đổi sang RedisSaver để theo PRD).
     guardrail_llm=None → chỉ chạy guardrail tầng regex.
-    intent_llm=None    → chỉ chạy rule CTA rồi fallback US1_SEARCH.
+    intent_llm=None    → chỉ chạy rule nhanh; câu còn lại dừng ở UNKNOWN.
     entities_llm=None  → entities luôn rỗng, conversation sẽ hỏi lại.
     """
     ctx = NodeContext(
@@ -78,7 +84,11 @@ def build_graph(
         _route_after_normalize,
         {"intent": "intent", "compose": "compose"},
     )
-    g.add_edge("intent", "entities")
+    g.add_conditional_edges(
+        "intent",
+        _route_after_intent,
+        {"entities": "entities", "compose": "compose"},
+    )
     g.add_edge("entities", "conversation")
     g.add_conditional_edges(
         "conversation",

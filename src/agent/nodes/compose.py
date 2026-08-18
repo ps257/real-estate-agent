@@ -159,25 +159,66 @@ def _c_us5_map(results: list[dict], state: AgentState) -> tuple[str, list[dict]]
     points = _result(results, "map_listings")
     if not isinstance(points, dict):
         return "Dạ em chưa lấy được dữ liệu bản đồ của dự án ạ.", []
-    return "Dạ đây là bản đồ các căn của dự án ạ.", [{"type": "map", "map": points}]
+    slots = state.get("slots") or {}
+    wants_amenities = bool(
+        slots.get("include_amenities", slots.get("wants_amenities", False))
+    )
+    if points.get("amenities"):
+        text = "Dạ đây là bản đồ các căn và tiện ích lân cận dự án ạ."
+    elif wants_amenities:
+        text = (
+            "Dạ đây là bản đồ các căn của dự án. Hiện em chưa lấy được danh sách "
+            "tiện ích lân cận, anh/chị thử lại sau giúp em ạ."
+        )
+    else:
+        text = "Dạ đây là bản đồ các căn của dự án ạ."
+    return text, [{"type": "map", "map": points}]
 
 
 def _c_us6_compare(results: list[dict], state: AgentState) -> tuple[str, list[dict]]:
     comparison = _result(results, "compare_listings")
     if not isinstance(comparison, dict) or not comparison.get("listings"):
         return "Dạ em chưa so sánh được các căn anh/chị chọn ạ.", []
+    comparison = dict(comparison)
+    comparison["listings"] = sorted(
+        comparison["listings"],
+        key=lambda listing: (
+            listing.get("price_vnd") is None,
+            listing.get("price_vnd") or 0,
+        ) if isinstance(listing, dict) else (True, 0),
+    )
     amenities = _result(results, "compare_nearby_amenities")
     if amenities:
-        comparison = dict(comparison)
         if isinstance(amenities, dict):
             comparison["amenities"] = amenities.get("listings_amenities", amenities)
         else:
             comparison["amenities"] = amenities
     n = len(comparison["listings"])
+    price_types = {
+        listing.get("price_type")
+        for listing in comparison["listings"]
+        if isinstance(listing, dict) and listing.get("price_type")
+    }
+    price_note = ""
+    if "asking" in price_types or "estimate" in price_types:
+        price_note = (
+            " Lưu ý: giá chào bán và giá ước tính là hai nguồn giá khác nhau, "
+            "được ghi rõ trên từng căn."
+        )
     # KHÔNG khuyến nghị "căn nào đáng mua hơn" — Out of scope trong PRD.
     return (
-        f"Dạ em đặt {n} căn cạnh nhau để anh/chị tiện đối chiếu ạ.",
-        [{"type": "compare", "comparison": comparison}],
+        f"Dạ em đặt {n} căn cạnh nhau để anh/chị tiện đối chiếu ạ.{price_note}",
+        [
+            {"type": "compare", "comparison": comparison},
+            {
+                "type": "cta",
+                "items": [
+                    {"label": "Xem bản đồ", "intent": "US5_MAP"},
+                    {"label": "Đặt lịch tham quan", "intent": "US2_1_VISIT"},
+                    {"label": "Tư vấn mua nhà", "intent": "US2_2_CONSULT"},
+                ],
+            },
+        ],
     )
 
 
@@ -215,6 +256,25 @@ async def compose(state: AgentState, ctx: NodeContext) -> dict:
         cot.append(f"compose: từ chối theo guardrail '{guardrail['code']}'")
         intent = "guardrail"
 
+    # Intent classifier không dùng được/không đủ chắc: hỏi lại bằng template cố
+    # định và dừng trước MCP. Không để LLM tự biến UNKNOWN thành tìm kiếm nhà.
+    elif intent == "UNKNOWN":
+        fallback_text = (
+            "Dạ em chưa xác định được nhu cầu bất động sản của anh/chị. "
+            "Anh/chị muốn tìm căn hộ, xem thông tin dự án, phân tích giá "
+            "hay đặt lịch tham quan ạ?"
+        )
+        actions.append({
+            "type": "clarify",
+            "prompt": fallback_text,
+            "suggestions": [
+                {"label": "Tìm căn hộ", "intent": "US1_SEARCH"},
+                {"label": "Xem tổng quan dự án", "intent": "US4_ANALYTICS"},
+                {"label": "Đặt lịch tham quan", "intent": "US2_1_VISIT"},
+            ],
+        })
+        cot.append("compose: hỏi lại vì intent UNKNOWN")
+
     # 2) Thiếu slot -> hỏi lại. conversation/tools soạn sẵn câu hỏi + gợi ý khi
     #    biết cụ thể thiếu gì; không có thì lùi về clarify_prompt của skill.
     elif state.get("needs_clarification"):
@@ -247,10 +307,12 @@ async def compose(state: AgentState, ctx: NodeContext) -> dict:
             fallback_text, actions = composer(state.get("tool_results", []), state)
             cot.append(f"compose: dựng {[a['type'] for a in actions] or 'text'} cho {intent}")
 
-    # Gọi ComposeLLM để sinh văn bản tự nhiên, nếu có
-    # US4 đã được dựng hoàn toàn từ số liệu MCP thật. Không gọi LLM thêm lần nữa:
-    # tránh paraphrase làm mất số liệu và giảm một network round-trip lớn.
-    if ctx.compose_llm and intent != "US4_ANALYTICS":
+    # Guardrail/UNKNOWN dùng thông điệp an toàn cố định; US4 dùng số liệu MCP
+    # nguyên bản. Không cho Compose LLM viết lại ba nhóm này.
+    deterministic = intent in (
+        "guardrail", "UNKNOWN", "clarify", "US4_ANALYTICS", "US5_MAP"
+    )
+    if ctx.compose_llm and not deterministic:
         text = await ctx.compose_llm.compose_text(state, intent, actions, fallback_text)
         cot.append(f"compose: dùng LLM sinh text cho {intent}")
     else:

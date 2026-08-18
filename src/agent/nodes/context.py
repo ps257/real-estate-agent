@@ -23,7 +23,7 @@ class NodeContext:
     llm_model: str = "gpt-5.6"
     # Guardrail tầng 2. None = chỉ chạy tầng regex (test, hoặc thiếu API key).
     guardrail_llm: LLMGuardrail | None = None
-    # Intent tầng 2. None = chỉ chạy rule CTA rồi fallback US1_SEARCH.
+    # Intent tầng 2. None = chỉ chạy rule nhanh rồi fallback UNKNOWN an toàn.
     intent_llm: IntentClassifier | None = None
     # Entity extraction. None = trả entities rỗng, conversation sẽ hỏi lại.
     entities_llm: EntityExtractor | None = None

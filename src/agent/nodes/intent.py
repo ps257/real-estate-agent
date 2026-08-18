@@ -26,8 +26,19 @@ _HISTORY_TURNS = 4
 _US4_PATTERNS = (
     "phân tích tổng quan", "thống kê giá", "thống kê diện tích", "giá trung bình",
     "diện tích trung bình", "bao nhiêu căn", "khoảng giá", "cơ cấu loại hình",
-    "nguồn giá", "giá chào bán", "giá ước tính",
+    "nguồn giá", "giá chào bán", "giá ước tính", "mặt bằng giá", "giá và diện tích",
 )
+
+_US1_PATTERNS = (
+    "tìm căn hộ", "tìm chung cư", "tìm nhà", "tìm mua nhà", "mua căn hộ",
+    "danh sách căn", "căn nào", "có căn", "phòng ngủ", "ngân sách",
+)
+
+
+def _is_analytics_query(text: str) -> bool:
+    """Fast-path US4 dùng chung cho node và regression tests."""
+    lowered = text.casefold()
+    return any(pattern in lowered for pattern in _US4_PATTERNS)
 
 
 def _match_domain_intent(text: str) -> str | None:
@@ -38,11 +49,20 @@ def _match_domain_intent(text: str) -> str | None:
     concrete listing IDs before the word "so sánh" can win this rule layer.
     """
     lowered = text.casefold()
-    listing_ids = re.findall(r"\b[a-z]{2,10}:[a-z0-9_-]+\b", lowered)
-    if len(set(listing_ids)) >= 2 and any(word in lowered for word in ("so sánh", "đối chiếu")):
+    listing_ids = re.findall(r"\b[a-z]{1,10}(?::|_)[a-z0-9_-]+\b", lowered)
+    compare_request = any(word in lowered for word in ("so sánh", "đối chiếu"))
+    if compare_request and (listing_ids or any(word in lowered for word in ("căn", "listing"))):
         return "US6_COMPARE"
-    if any(pattern in lowered for pattern in _US4_PATTERNS):
+    nearby_request = any(word in lowered for word in ("gần", "xung quanh", "lân cận"))
+    amenity = any(word in lowered for word in (
+        "quán ăn", "nhà hàng", "trường học", "bệnh viện", "siêu thị", "tiện ích"
+    ))
+    if nearby_request and amenity:
+        return "US5_MAP"
+    if _is_analytics_query(text):
         return "US4_ANALYTICS"
+    if any(pattern in lowered for pattern in _US1_PATTERNS):
+        return "US1_SEARCH"
     return None
 
 
@@ -66,8 +86,8 @@ async def detect_intent(state: AgentState, ctx: NodeContext) -> dict:
     INPUT  : ``normalized_input`` (+ ``messages`` để hiểu ngữ cảnh đa lượt).
     OUTPUT : ``intent`` + ``active_skill`` (name của skill khớp) + ``cot``.
 
-    Luôn trả về một intent — không có trạng thái "không biết". Lỗi/timeout/nhãn
-    lạ đều rơi về ``FALLBACK_INTENT``.
+    Luôn trả về một intent. Lỗi/timeout/nhãn lạ rơi về ``UNKNOWN`` để graph hỏi
+    lại an toàn, không gọi entities/MCP.
     """
     text = state.get("normalized_input") or state.get("user_input", "")
     cot = list(state.get("cot", []))
