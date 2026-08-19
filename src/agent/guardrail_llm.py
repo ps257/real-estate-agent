@@ -6,9 +6,9 @@ nói vòng vo ("bỏ tiền vào đây có ổn không?") mà regex bỏ sót.
 
 Ba nguyên tắc thiết kế:
 
-1. **Fail-open.** Mọi lỗi (timeout, rate limit, refusal, parse hỏng) đều trả về
-   "cho qua". Guardrail chết không được phép làm chết cả sản phẩm — tầng 1 vẫn
-   còn đó làm lưới an toàn.
+1. **Fallback an toàn.** Lỗi (timeout, rate limit, refusal, parse hỏng) trả về
+   ``None`` để node normalize quyết định bằng rule/domain signal. Input không có
+   tín hiệu BĐS sẽ được hỏi lại thay vì mặc định cho qua.
 2. **Ngưỡng tin cậy.** Chỉ chặn khi model đủ chắc. False positive (chặn nhầm câu
    hợp lệ) tốn khách; false negative chỉ tốn một câu trả lời lệch phạm vi.
 3. **Ngân sách latency cứng.** Timeout mặc định 2s, nằm trong mục tiêu
@@ -35,7 +35,8 @@ GuardrailCode = Literal[
     "investment",
     "financial",
     "transaction",
-    "unrelated",
+    "out_of_domain",
+    "smalltalk",
     "in_scope",
 ]
 
@@ -63,12 +64,17 @@ lướt sóng, sinh lời, tỷ suất lợi nhuận, dự báo giá lên/xuốn
 - financial — nhờ tính toán vay/trả góp/lãi suất/ân hạn gốc, mô phỏng khoản vay.
 - transaction — muốn đặt cọc, thanh toán trực tuyến, chuyển khoản, ký hợp đồng \
 điện tử ngay trong cuộc trò chuyện.
-- unrelated — hỏi những câu lạc đề, chuyện phiếm không liên quan, nhờ làm toán, \
-viết code, hỏi thời tiết, hoặc bất cứ chủ đề nào nằm ngoài lĩnh vực bất động sản.
+- out_of_domain — yêu cầu không liên quan đến bất động sản: tìm đồ ăn/quán ăn \
+độc lập, thời tiết, viết code, y tế, vé máy bay, du lịch hoặc kiến thức chung.
+
+NHÃN HỘI THOẠI:
+
+- smalltalk — chỉ chào hỏi, cảm ơn hoặc tạm biệt, không kèm yêu cầu nghiệp vụ.
 
 NHÃN HỢP LỆ:
 
-- in_scope — mọi thứ còn lại.
+- in_scope — yêu cầu liên quan trực tiếp đến bất động sản, dự án, căn/listing, \
+giá rao bán, chính sách dự án, bản đồ hoặc tiện ích xung quanh một dự án/khu ở.
 
 QUY TẮC PHÂN LOẠI (theo thứ tự ưu tiên):
 
@@ -79,12 +85,13 @@ sách trả góp của dự án là gì?" (in_scope) với "tính giúp tôi tr�
 2. "Chủ đầu tư" là tên gọi doanh nghiệp phát triển dự án, KHÔNG phải hành vi đầu \
 tư. "Chủ đầu tư dự án X là ai?" là in_scope.
 3. Tra cứu BĐS, hỏi giá rao bán, so sánh thông số các căn, xem bản đồ, xem tiện \
-ích, đặt lịch tham quan, xin tư vấn viên đều là in_scope.
-4. Chào hỏi cơ bản ("chào em", "xin chào") hoặc cảm ơn ("cảm ơn em") là in_scope. \
-Nhưng nếu yêu cầu làm việc khác (thời tiết, giải trí, kiến thức chung) thì là unrelated.
-5. Phân vân về CHỦ ĐỀ (không rõ khách đang hỏi gì) thì chọn in_scope — chặn nhầm \
-câu hợp lệ tệ hơn bỏ lọt. NHƯNG nếu ý định đã rõ mà chỉ diễn đạt vòng vo, hãy gán \
-đúng nhãn: nói lóng không biến một câu ngoài phạm vi thành in_scope.
+ích quanh dự án, đặt lịch tham quan, xin tư vấn viên đều là in_scope.
+4. "Tìm quán ăn" là out_of_domain; "tìm quán ăn gần Vinhomes Ocean Park" là \
+in_scope vì đó là tiện ích quanh một dự án cụ thể.
+5. Chào hỏi/cảm ơn/tạm biệt thuần túy là smalltalk. Nếu kèm yêu cầu BĐS, ưu tiên \
+phân loại theo yêu cầu BĐS.
+6. Nếu chủ đề không rõ và không có tín hiệu BĐS, chọn out_of_domain để hệ thống \
+hỏi lại an toàn. Không coi "mọi thứ còn lại" là in_scope.
 
 CÁCH NÓI GIÁN TIẾP — ĐỌC KỸ:
 
@@ -135,13 +142,12 @@ class LLMGuardrail:
         return self._client
 
     async def classify(self, text: str) -> GuardrailVerdict | None:
-        """Trả về verdict nếu nên CHẶN; None nếu cho qua.
+        """Trả verdict đã qua ngưỡng; ``None`` chỉ khi không phân loại tin cậy.
 
-        None bao gồm cả 3 trường hợp: hợp lệ, confidence dưới ngưỡng, và lỗi
-        (fail-open). Caller không cần phân biệt.
+        Trả cả ``in_scope`` để caller phân biệt một kết luận hợp lệ với lỗi API.
         """
         verdict = await self.classify_raw(text)
-        if verdict is None or verdict.code == "in_scope":
+        if verdict is None:
             return None
 
         confidence = min(max(verdict.confidence, 0.0), 1.0)
@@ -157,11 +163,11 @@ class LLMGuardrail:
         return verdict.model_copy(update={"confidence": confidence})
 
     async def classify_raw(self, text: str) -> GuardrailVerdict | None:
-        """Verdict THÔ từ model — chưa lọc ``in_scope``, chưa áp ngưỡng.
+        """Verdict THÔ từ model — chưa áp ngưỡng tin cậy.
 
         Dùng để chẩn đoán (xem scripts/smoke_guardrail.py): phân biệt "model bảo
         hợp lệ" với "model bắt đúng nhưng confidence thấp" — hai lỗi cần hai cách
-        sửa khác nhau. Trả None chỉ khi lỗi/refusal (fail-open).
+        sửa khác nhau. Trả None chỉ khi lỗi/refusal.
         """
         if not self.enabled or not text.strip():
             return None
@@ -184,7 +190,7 @@ class LLMGuardrail:
                 # giá trị hợp lệ trong docs trước khi bật, sai là 400.
             )
         except Exception as exc:  # noqa: BLE001 — fail-open là chủ ý, xem docstring.
-            logger.warning("guardrail LLM lỗi, cho qua: %s: %s", type(exc).__name__, exc)
+            logger.warning("guardrail LLM lỗi, dùng fallback an toàn: %s: %s", type(exc).__name__, exc)
             return None
 
         # Model từ chối vì lý do an toàn -> output_parsed là None.

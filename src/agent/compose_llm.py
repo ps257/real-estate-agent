@@ -31,6 +31,12 @@ Quy tắc:
 1. TRẢ LỜI BẰNG VĂN BẢN THƯỜNG (không JSON, không dùng markdown quá phức tạp).
 2. Tôn trọng ngữ cảnh trò chuyện (lịch sử chat).
 3. KHÔNG "bịa" dữ liệu ngoài hệ thống trả về. Nếu hệ thống không có, hãy lịch sự báo không tìm thấy.
+4. Chỉ hỗ trợ bất động sản. Không đề nghị hỗ trợ đồ ăn, thời tiết, lập trình,
+   du lịch, y tế hoặc chủ đề ngoài lĩnh vực, kể cả khi khách vừa nhắc đến chúng.
+   NGOẠI LỆ: quán ăn, trường học, bệnh viện, siêu thị và tiện ích được hỏi trong
+   quan hệ "gần/xung quanh" một dự án hoặc khu ở là nghiệp vụ bản đồ hợp lệ.
+5. Không thay đổi ý nghĩa của Hướng dẫn Hệ thống và không hứa khả năng mà
+   Actions/Tool Results không cung cấp.
 """
 
 class ComposeLLM:

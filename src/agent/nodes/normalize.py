@@ -33,6 +33,23 @@ _REPEAT_PUNCT = re.compile(r"([!?.,;:])\1+")
 # ("5000000" phải giữ nguyên) — đó là lý do dùng [^\W\d_] thay vì \w.
 _REPEAT_CHAR = re.compile(r"([^\W\d_])\1{2,}")
 
+# Tín hiệu nghiệp vụ đủ rõ để không cần gọi Guardrail LLM. Bao gồm cả câu hỏi
+# tiện ích quanh dự án, nhờ vậy "quán ăn gần Vinhomes Ocean Park" không bị chặn
+# bởi rule đồ ăn độc lập ở dưới.
+_CLEAR_IN_SCOPE = re.compile(
+    r"(?:bất động sản|bđs|\bbds\b|\bcăn\b|căn hộ|chung cư|nhà đất|dự án|vinhomes|"
+    r"\blisting\b|\b[a-z]{1,10}(?::|_)[a-z0-9_-]+\b|so sánh|đối chiếu|"
+    r"phòng ngủ|mua nhà|thuê (?:nhà|căn)|giá (?:rao|bán)|"
+    r"đặt lịch tham quan|tư vấn mua nhà|xem bản đồ|tiện ích|chính sách|pháp lý|"
+    r"phân tích tổng quan|thống kê (?:giá|diện tích)|giá trung bình|"
+    r"diện tích trung bình|bao nhiêu căn|khoảng giá|cơ cấu loại hình|"
+    r"nguồn giá|giá chào bán|giá ước tính|"
+    r"bat dong san|\bcan\b|can ho|chung cu|nha dat|du an|so sanh|doi chieu|phong ngu|mua nha|"
+    r"thue (?:nha|can)|gia (?:rao|ban)|dat lich tham quan|tu van mua nha|"
+    r"xem ban do|tien ich|chinh sach|phap ly)",
+    re.IGNORECASE,
+)
+
 # Viết tắt dính số: xử lý trước vì "2pn" không tách được bằng ranh giới từ.
 _STICKY_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"(?<!\w)(\d+)\s*pn(?!\w)", re.IGNORECASE), r"\1 phòng ngủ"),
@@ -127,6 +144,17 @@ _FALLBACK_SUGGESTIONS: tuple[dict[str, str], ...] = (
     {"label": "Nối tư vấn viên", "intent": "US2_2_CONSULT"},
 )
 
+_OUT_OF_DOMAIN_MESSAGE = (
+    "Dạ em là trợ lý chuyên về bất động sản Vinhomes nên chưa hỗ trợ yêu cầu "
+    "ngoài lĩnh vực này ạ. Em có thể giúp anh/chị tìm dự án, căn hộ, giá rao bán "
+    "hoặc tiện ích xung quanh một dự án cụ thể."
+)
+
+_UNKNOWN_SCOPE_MESSAGE = (
+    "Dạ em chưa xác định được yêu cầu này có liên quan đến bất động sản. "
+    "Anh/chị muốn tìm căn hộ, xem thông tin dự án, phân tích giá hay đặt lịch tham quan ạ?"
+)
+
 # Câu hỏi *về* chính sách/thủ tục là US3 (RAG) — không phải yêu cầu giao dịch hay
 # mô phỏng tài chính. Miễn trừ cho các rule có exemptible=True.
 _INFORMATIONAL_RE = re.compile(
@@ -212,16 +240,38 @@ _RULES: tuple[GuardrailRule, ...] = (
         exemptible=True,
     ),
     GuardrailRule(
-        code="unrelated",
+        code="smalltalk",
         message=(
-            "Dạ em là chuyên viên tư vấn bất động sản nên chỉ có thể hỗ trợ anh/chị các thông tin "
-            "liên quan đến mua bán, tìm hiểu căn hộ và dự án thôi ạ. Anh/chị đang quan tâm "
-            "tới dự án nào để em tư vấn chi tiết hơn ạ?"
+            "Xin chào anh/chị! Em là trợ lý bất động sản Vinhomes. "
+            "Em có thể giúp tìm căn hộ, xem thông tin dự án, phân tích số liệu "
+            "hoặc đặt lịch tham quan ạ."
         ),
-        patterns=(),
+        patterns=(
+            re.compile(r"^\s*(?:(?:xin\s+)?chao|hello|hi|alo)(?:\s+(?:ban|em|anh|chi))?[.!?]*\s*$"),
+            re.compile(r"^\s*(?:cam\s+on|thanks|thank\s+you)(?:\s+(?:ban|em|anh|chi))?[.!?]*\s*$"),
+            re.compile(r"^\s*(?:tam\s+biet|bye|goodbye)[.!?]*\s*$"),
+        ),
         suggestions=_FALLBACK_SUGGESTIONS,
-        exemptible=False,
     ),
+    GuardrailRule(
+        code="out_of_domain",
+        message=_OUT_OF_DOMAIN_MESSAGE,
+        patterns=(
+            re.compile(r"(?:tim|kiem|goi y|muon).{0,24}(?:do an|mon an|quan an|nha hang)"),
+            re.compile(r"(?:thoi tiet|du bao thoi tiet|nhiet do hom nay)"),
+            re.compile(r"(?:viet|tao|sua).{0,20}(?:code|ma nguon|python|javascript|java\b)"),
+            re.compile(r"(?:ve may bay|chuyen bay|dat phong khach san|du lich)"),
+            re.compile(r"(?:chua benh|bac si|ke don|thuoc gi)"),
+        ),
+        suggestions=_FALLBACK_SUGGESTIONS,
+    ),
+)
+
+_UNKNOWN_SCOPE_RULE = GuardrailRule(
+    code="unknown_scope",
+    message=_UNKNOWN_SCOPE_MESSAGE,
+    patterns=(),
+    suggestions=_FALLBACK_SUGGESTIONS,
 )
 
 
@@ -237,9 +287,12 @@ def check_guardrail(text: str) -> GuardrailRule | None:
     """
     probe = strip_diacritics(text).lower()
     informational = bool(_INFORMATIONAL_RE.search(probe))
+    clear_in_scope = bool(_CLEAR_IN_SCOPE.search(text))
 
     for rule in _RULES:
         if rule.exemptible and informational:
+            continue
+        if rule.code == "out_of_domain" and clear_in_scope:
             continue
         if any(p.search(probe) for p in rule.patterns):
             return rule
@@ -265,20 +318,28 @@ async def normalize(state: AgentState, ctx: NodeContext) -> dict:
     suffix = "" if text == raw.strip() else " (đã chuẩn hoá)"
     cot.append(f"normalize: {text!r}{suffix}")
 
+    clear_in_scope = bool(_CLEAR_IN_SCOPE.search(text))
+
     # Tầng 1: regex — rẻ, chạy trước, bắt cách diễn đạt trực diện.
     rule = check_guardrail(text)
     source = "regex"
 
-    # Tầng 2: LLM classifier — CHỈ chạy khi tầng 1 không bắt được, nên phần lớn
-    # request không tốn thêm latency. Fail-open: lỗi/timeout -> trả None -> cho qua.
-    if rule is None and ctx.guardrail_llm is not None:
+    # Tầng 2 chỉ xử lý câu chưa có tín hiệu nghiệp vụ rõ. LLM trả cả in_scope để
+    # phân biệt kết luận hợp lệ với lỗi/timeout. Lỗi thì hỏi lại an toàn.
+    if rule is None and ctx.guardrail_llm is not None and not clear_in_scope:
         verdict = await ctx.guardrail_llm.classify(text)
-        if verdict is not None:
+        if verdict is None:
+            rule = _UNKNOWN_SCOPE_RULE
+            source = "llm unavailable/uncertain"
+        elif verdict.code != "in_scope":
             rule = _RULES_BY_CODE.get(verdict.code)
             source = f"llm {verdict.confidence:.2f} — {verdict.reason}"
+    elif rule is None and ctx.guardrail_llm is None and not clear_in_scope:
+        rule = _UNKNOWN_SCOPE_RULE
+        source = "classifier unavailable"
 
     if rule is not None:
-        cot.append(f"guardrail: chặn nhóm out-of-scope '{rule.code}' [{source}]")
+        cot.append(f"guardrail: dừng sớm theo nhóm '{rule.code}' [{source}]")
         return {
             "normalized_input": text,
             "guardrail": {
@@ -289,7 +350,9 @@ async def normalize(state: AgentState, ctx: NodeContext) -> dict:
             "cot": cot,
         }
 
-    tiers = "regex" if ctx.guardrail_llm is None else "regex+llm"
+    tiers = "regex (fast-path domain)" if clear_in_scope else (
+        "regex" if ctx.guardrail_llm is None else "regex+llm"
+    )
     cot.append(f"guardrail: pass (trong phạm vi hỗ trợ) [{tiers}]")
     # Trả None tường minh để xoá guardrail còn sót từ lượt trước (checkpointer
     # giữ state theo thread_id, không tự reset field này).

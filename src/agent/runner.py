@@ -4,14 +4,15 @@
 - run_stream(): async-generator phát các Event mô phỏng OpenAI Realtime
   (dùng cho POST /chat/stream).
 
-Ghi chú: scaffold phát event *sau khi* graph chạy xong (replay từ state) để đơn
-giản và deterministic cho student. Muốn TTFT thật (<800ms như PRD), student có thể
-chuyển sang graph.astream_events / stream token LLM trực tiếp trong compose.
+Tiến độ node được phát trực tiếp trong lúc graph chạy. Text cuối vẫn được chia
+thành các delta sau bước compose; vì vậy UI có phản hồi tức thời ngay cả khi LLM
+hoặc MCP đang xử lý lâu.
 """
 
 from __future__ import annotations
 
 import uuid
+import time
 from typing import Any, AsyncIterator
 
 from agent.events import (
@@ -20,6 +21,7 @@ from agent.events import (
     MCPToolCallArguments,
     MCPToolCallCompleted,
     OutputTextDelta,
+    ProgressEvent,
     ReasoningDelta,
     ResponseCreated,
     ResponseDone,
@@ -57,10 +59,70 @@ async def run_stream(
 ) -> AsyncIterator[Event]:
     """Chạy graph, yield chuỗi Event mô phỏng OpenAI Realtime server events."""
     response_id = f"resp_{uuid.uuid4().hex[:12]}"
+    started = time.perf_counter()
+    def elapsed() -> int:
+        return round((time.perf_counter() - started) * 1000)
     yield ResponseCreated(response_id=response_id, thread_id=thread_id)
+    yield ProgressEvent(
+        stage="request", status="active", message="Đang tiếp nhận yêu cầu…", elapsed_ms=elapsed()
+    )
 
     config = {"configurable": {"thread_id": thread_id}}
-    state = await graph.ainvoke(new_state(message, thread_id, intent_override=intent_override), config=config)
+    state: dict[str, Any] = {}
+    progress_messages = {
+        "normalize": "Đã kiểm tra phạm vi yêu cầu",
+        "intent": "Đã xác định nhu cầu của bạn",
+        "entities": "Đã đọc dự án và các tiêu chí cần phân tích",
+        "conversation": "Đã chuẩn bị dữ liệu truy vấn",
+        "tools": "Đã nhận số liệu mới nhất từ hệ thống",
+        "compose": "Đã hoàn thiện câu trả lời",
+    }
+    active_messages = {
+        "intent": "Đang xác định nhu cầu của bạn…",
+        "entities": "Đang đọc dự án và các tiêu chí…",
+        "conversation": "Đang chuẩn bị dữ liệu truy vấn…",
+        "tools": "Đang lấy số liệu mới nhất từ hệ thống…",
+        "compose": "Đang tổng hợp câu trả lời…",
+    }
+
+    # Stream update ngay khi từng node hoàn tất, thay vì ainvoke xong toàn graph rồi
+    # mới replay event. UI nhờ đó thấy tiến độ thật trong lúc LLM/MCP đang chạy.
+    async for update in graph.astream(
+        new_state(message, thread_id, intent_override=intent_override),
+        config=config,
+        stream_mode="updates",
+    ):
+        if not isinstance(update, dict):
+            continue
+        for node_name, node_update in update.items():
+            if isinstance(node_update, dict):
+                state.update(node_update)
+            progress_message = progress_messages.get(node_name)
+            if progress_message:
+                yield ProgressEvent(
+                    stage=node_name,
+                    message=progress_message,
+                    elapsed_ms=elapsed(),
+                )
+                if node_name == "normalize":
+                    next_node = "compose" if state.get("guardrail") else "intent"
+                elif node_name == "intent":
+                    next_node = "entities"
+                elif node_name == "entities":
+                    next_node = "conversation"
+                elif node_name == "conversation":
+                    next_node = "compose" if state.get("needs_clarification") else "tools"
+                elif node_name == "tools":
+                    next_node = "compose"
+                else:
+                    next_node = None
+                if next_node and active_messages.get(next_node):
+                    yield ProgressEvent(
+                        stage=next_node,
+                        status="active",
+                        message=active_messages[next_node],
+                        elapsed_ms=elapsed(),
+                    )
 
     # 1) Chain-of-thought.
     if include_reasoning:

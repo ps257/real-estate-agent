@@ -40,6 +40,16 @@ class ReasoningDelta(Event):
     delta: str
 
 
+class ProgressEvent(Event):
+    """Tiến độ xử lý theo node để UI không phải chờ trong im lặng."""
+
+    type: str = "response.progress"
+    stage: str
+    status: str = "completed"
+    message: str
+    elapsed_ms: int
+
+
 class MCPToolCallArguments(Event):
     """Phát ngay trước khi gọi một MCP tool."""
 

@@ -29,7 +29,7 @@ def _result(results: list[dict], name: str) -> Any:
 
 def _project_name(results: list[dict], fallback: str = "dự án") -> str:
     """Tên dự án lấy từ bất kỳ tool nào có trả về, để câu trả lời tự nhiên hơn."""
-    for name in ("start_visit_booking", "start_consultation", "resolve_project"):
+    for name in ("project_overview", "start_visit_booking", "start_consultation", "resolve_project"):
         payload = _result(results, name)
         if isinstance(payload, dict):
             project = payload.get("project")
@@ -90,35 +90,135 @@ def _c_us4_analytics(results: list[dict], state: AgentState) -> tuple[str, list[
     overview = _result(results, "project_overview")
     if not isinstance(overview, dict):
         return "Dạ em chưa lấy được số liệu tổng quan của dự án ạ.", []
-    return (
-        f"Dạ đây là tổng quan {_project_name(results)} ạ.",
-        [{"type": "overview", "overview": overview}],
-    )
+    stats = overview.get("stats") or overview
+    project = overview.get("project") or {}
+    name = project.get("name") or _project_name(results)
+    question = (state.get("normalized_input") or state.get("user_input") or "").casefold()
+
+    def money(value: Any) -> str:
+        if not isinstance(value, (int, float)):
+            return "chưa có dữ liệu"
+        billions = value / 1_000_000_000
+        return f"{billions:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " tỷ đồng"
+
+    def area(value: Any) -> str:
+        if not isinstance(value, (int, float)):
+            return "chưa có dữ liệu"
+        return f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " m²"
+
+    def integer(value: Any) -> str:
+        return f"{int(value or 0):,}".replace(",", ".")
+
+    price = stats.get("price_vnd") or {}
+    area_stats = stats.get("area_m2") or {}
+    count = stats.get("count")
+    property_types = stats.get("by_property_type") or {}
+    price_types = stats.get("by_price_type") or {}
+
+    if "cơ cấu" in question or "loại hình" in question:
+        labels = {
+            "can_ho": "căn hộ", "lien_ke": "liền kề", "shophouse": "shophouse",
+            "thuong_mai_dich_vu": "thương mại dịch vụ", "biet_thu_song_lap": "biệt thự song lập",
+            "unknown": "loại hình khác",
+        }
+        ranked = sorted(property_types.items(), key=lambda item: item[1], reverse=True)
+        detail = ", ".join(f"{labels.get(key, key)} {value} căn" for key, value in ranked[:5])
+        text = f"{name} hiện có cơ cấu nguồn hàng gồm {detail}. Căn hộ đang là nhóm chiếm tỷ trọng lớn nhất."
+    elif "nguồn giá" in question or ("giá chào bán" in question and "giá ước tính" in question):
+        asking = price_types.get("asking") or {}
+        estimate = price_types.get("estimate") or {}
+        text = (
+            f"Tại {name}, dữ liệu gồm {asking.get('count', 0)} căn có giá chào bán, "
+            f"trung bình {money((asking.get('price_vnd') or {}).get('avg'))}; và "
+            f"{estimate.get('count', 0)} căn dùng giá ước tính, trung bình "
+            f"{money((estimate.get('price_vnd') or {}).get('avg'))}. Hai nhóm giá được tách riêng trên biểu đồ bên dưới."
+        )
+    elif "thấp nhất" in question or "cao nhất" in question or "khoảng giá" in question:
+        text = f"Khoảng giá ghi nhận tại {name} hiện từ {money(price.get('min'))} đến {money(price.get('max'))}."
+    elif "diện tích" in question and "giá" in question:
+        text = (
+            f"Tại {name}, giá trung bình là {money(price.get('avg'))}, trong khoảng "
+            f"{money(price.get('min'))}–{money(price.get('max'))}. Diện tích trung bình là "
+            f"{area(area_stats.get('avg'))}, dao động từ {area(area_stats.get('min'))} đến {area(area_stats.get('max'))}."
+        )
+    elif "bao nhiêu căn" in question or "số lượng" in question:
+        text = f"{name} hiện ghi nhận {integer(count)} căn, với mức giá trung bình {money(price.get('avg'))}."
+    else:
+        top_type = max(property_types, key=property_types.get) if property_types else None
+        top_count = property_types.get(top_type, 0) if top_type else 0
+        text = (
+            f"{name} hiện ghi nhận {integer(count)} căn. Giá trung bình {money(price.get('avg'))}, "
+            f"diện tích trung bình {area(area_stats.get('avg'))}; nguồn hàng chủ yếu là căn hộ "
+            f"({integer(top_count)} căn)."
+        )
+
+    return text, [{"type": "overview", "overview": overview}]
 
 
 def _c_us5_map(results: list[dict], state: AgentState) -> tuple[str, list[dict]]:
     points = _result(results, "map_listings")
     if not isinstance(points, dict):
         return "Dạ em chưa lấy được dữ liệu bản đồ của dự án ạ.", []
-    return "Dạ đây là bản đồ các căn của dự án ạ.", [{"type": "map", "map": points}]
+    slots = state.get("slots") or {}
+    wants_amenities = bool(
+        slots.get("include_amenities", slots.get("wants_amenities", False))
+    )
+    if points.get("amenities"):
+        text = "Dạ đây là bản đồ các căn và tiện ích lân cận dự án ạ."
+    elif wants_amenities:
+        text = (
+            "Dạ đây là bản đồ các căn của dự án. Hiện em chưa lấy được danh sách "
+            "tiện ích lân cận, anh/chị thử lại sau giúp em ạ."
+        )
+    else:
+        text = "Dạ đây là bản đồ các căn của dự án ạ."
+    return text, [{"type": "map", "map": points}]
 
 
 def _c_us6_compare(results: list[dict], state: AgentState) -> tuple[str, list[dict]]:
     comparison = _result(results, "compare_listings")
     if not isinstance(comparison, dict) or not comparison.get("listings"):
         return "Dạ em chưa so sánh được các căn anh/chị chọn ạ.", []
+    comparison = dict(comparison)
+    comparison["listings"] = sorted(
+        comparison["listings"],
+        key=lambda listing: (
+            listing.get("price_vnd") is None,
+            listing.get("price_vnd") or 0,
+        ) if isinstance(listing, dict) else (True, 0),
+    )
     amenities = _result(results, "compare_nearby_amenities")
     if amenities:
-        comparison = dict(comparison)
         if isinstance(amenities, dict):
             comparison["amenities"] = amenities.get("listings_amenities", amenities)
         else:
             comparison["amenities"] = amenities
     n = len(comparison["listings"])
+    price_types = {
+        listing.get("price_type")
+        for listing in comparison["listings"]
+        if isinstance(listing, dict) and listing.get("price_type")
+    }
+    price_note = ""
+    if "asking" in price_types or "estimate" in price_types:
+        price_note = (
+            " Lưu ý: giá chào bán và giá ước tính là hai nguồn giá khác nhau, "
+            "được ghi rõ trên từng căn."
+        )
     # KHÔNG khuyến nghị "căn nào đáng mua hơn" — Out of scope trong PRD.
     return (
-        f"Dạ em đặt {n} căn cạnh nhau để anh/chị tiện đối chiếu ạ.",
-        [{"type": "compare", "comparison": comparison}],
+        f"Dạ em đặt {n} căn cạnh nhau để anh/chị tiện đối chiếu ạ.{price_note}",
+        [
+            {"type": "compare", "comparison": comparison},
+            {
+                "type": "cta",
+                "items": [
+                    {"label": "Xem bản đồ", "intent": "US5_MAP"},
+                    {"label": "Đặt lịch tham quan", "intent": "US2_1_VISIT"},
+                    {"label": "Tư vấn mua nhà", "intent": "US2_2_CONSULT"},
+                ],
+            },
+        ],
     )
 
 
@@ -156,6 +256,25 @@ async def compose(state: AgentState, ctx: NodeContext) -> dict:
         cot.append(f"compose: từ chối theo guardrail '{guardrail['code']}'")
         intent = "guardrail"
 
+    # Intent classifier không dùng được/không đủ chắc: hỏi lại bằng template cố
+    # định và dừng trước MCP. Không để LLM tự biến UNKNOWN thành tìm kiếm nhà.
+    elif intent == "UNKNOWN":
+        fallback_text = (
+            "Dạ em chưa xác định được nhu cầu bất động sản của anh/chị. "
+            "Anh/chị muốn tìm căn hộ, xem thông tin dự án, phân tích giá "
+            "hay đặt lịch tham quan ạ?"
+        )
+        actions.append({
+            "type": "clarify",
+            "prompt": fallback_text,
+            "suggestions": [
+                {"label": "Tìm căn hộ", "intent": "US1_SEARCH"},
+                {"label": "Xem tổng quan dự án", "intent": "US4_ANALYTICS"},
+                {"label": "Đặt lịch tham quan", "intent": "US2_1_VISIT"},
+            ],
+        })
+        cot.append("compose: hỏi lại vì intent UNKNOWN")
+
     # 2) Thiếu slot -> hỏi lại. conversation/tools soạn sẵn câu hỏi + gợi ý khi
     #    biết cụ thể thiếu gì; không có thì lùi về clarify_prompt của skill.
     elif state.get("needs_clarification"):
@@ -188,8 +307,12 @@ async def compose(state: AgentState, ctx: NodeContext) -> dict:
             fallback_text, actions = composer(state.get("tool_results", []), state)
             cot.append(f"compose: dựng {[a['type'] for a in actions] or 'text'} cho {intent}")
 
-    # Gọi ComposeLLM để sinh văn bản tự nhiên, nếu có (bỏ qua với guardrail/clarify vì đã có câu chuẩn)
-    if ctx.compose_llm and intent not in ("clarify", "guardrail"):
+    # Guardrail/UNKNOWN dùng thông điệp an toàn cố định; US4 dùng số liệu MCP
+    # nguyên bản. Không cho Compose LLM viết lại ba nhóm này.
+    deterministic = intent in (
+        "guardrail", "UNKNOWN", "clarify", "US4_ANALYTICS", "US5_MAP"
+    )
+    if ctx.compose_llm and not deterministic:
         text = await ctx.compose_llm.compose_text(state, intent, actions, fallback_text)
         cot.append(f"compose: dùng LLM sinh text cho {intent}")
     else:

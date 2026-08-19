@@ -5,10 +5,8 @@ Dùng chung triết lý hai tầng với guardrail (agent/guardrail_llm.py):
   tầng 1  rule       nhãn CTA khớp chính xác  (~µs, không tốn tiền)
   tầng 2  LLM        phần còn lại
 
-Khác guardrail ở CHÍNH SÁCH LỖI. Guardrail fail-open (cho qua) vì tầng regex
-vẫn là lưới an toàn. Intent thì buộc phải chọn MỘT nhãn, không có "không biết" —
-nên lỗi/timeout/nhãn lạ đều fallback về ``US1_SEARCH``: intent an toàn nhất vì
-nó chỉ tra cứu, không tạo booking hay ghi dữ liệu.
+Khi lỗi/timeout/nhãn lạ, classifier trả về ``UNKNOWN``. Graph dừng trước
+entities/MCP và hỏi lại an toàn thay vì đoán thành một nhu cầu tìm nhà.
 
 Danh sách nhãn KHÔNG hard-code — dựng động từ SkillRegistry. Thêm một file
 ``skills/catalog/*.md`` là có thêm một intent, không phải sửa file này.
@@ -29,10 +27,9 @@ if TYPE_CHECKING:  # tránh import vòng khi chỉ cần type hint
 
 logger = logging.getLogger(__name__)
 
-# Intent dùng khi không phân loại được (lỗi, timeout, nhãn lạ, chitchat).
-# Chọn US1_SEARCH vì nó read-only: đoán sai chỉ tốn một lượt hỏi lại, không
-# tạo booking nhầm cho khách.
-FALLBACK_INTENT = "US1_SEARCH"
+# Intent nội bộ dùng khi không phân loại được (lỗi, timeout hoặc nhãn lạ).
+# Không có skill tương ứng: graph route thẳng sang compose và không gọi MCP.
+FALLBACK_INTENT = "UNKNOWN"
 
 # --- Tầng 1: nhãn CTA -> intent -------------------------------------------
 # 4 nút CTA do listing_cta_actions trả về (xác nhận từ MCP thật). Khi user bấm
@@ -96,7 +93,8 @@ trước nếu tin nhắn mới rõ ràng hướng khác.
    - Nhu cầu TÌM MUA NHÀ, hỏi DANH SÁCH căn, hoặc đưa ra tiêu chí (giá, phòng ngủ) → US1_SEARCH.
    - CHỦ ĐỘNG yêu cầu Đặt lịch ĐI XEM tận nơi → US2_1_VISIT. CHỦ ĐỘNG yêu cầu xin người TƯ VẤN → US2_2_CONSULT.
    - So sánh từ 2 căn trở lên → US6_COMPARE. Xem vị trí trên bản đồ → US5_MAP.
-4. Chào hỏi, cảm ơn, chuyện phiếm, hoặc không rõ ý → {fallback}.
+4. Nếu vẫn không khớp bất kỳ nhãn nghiệp vụ nào → {fallback}. Không đoán thành \
+US1_SEARCH chỉ vì yêu cầu không rõ.
 
 Trả về intent (đúng một mã trong danh sách trên), confidence (0.0-1.0), và \
 reason ngắn gọn bằng tiếng Việt (tối đa 15 từ)."""
@@ -147,6 +145,7 @@ class IntentClassifier:
         if not valid:
             logger.warning("intent: catalog rỗng, không có nhãn nào để phân loại")
             return None
+        valid.add(FALLBACK_INTENT)
 
         messages: list[dict[str, str]] = [
             {

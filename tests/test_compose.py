@@ -1,9 +1,10 @@
-"""Focused tests for US4 response composition."""
+"""Focused tests for deterministic response composition."""
 
-from agent.nodes.compose import _compose_overview, _not_found_prompt
+from agent.nodes.compose import _c_us4_analytics, compose
+from agent.nodes.context import NodeContext
 
 
-def test_single_listing_avoids_fake_range_and_warns_about_sample_size():
+def test_us4_overview_uses_real_mcp_payload():
     overview = {
         "project": {
             "id": "amber-riverside",
@@ -30,17 +31,52 @@ def test_single_listing_avoids_fake_range_and_warns_about_sample_size():
         },
     }
 
-    text, actions = _compose_overview(overview)
+    text, actions = _c_us4_analytics(
+        [{"name": "project_overview", "result": overview}],
+        {"user_input": "Phân tích tổng quan dự án Amber Riverside"},
+    )
 
-    assert "dao động" not in text
-    assert "chỉ có 1 listing" in text
-    assert "chưa đủ để phản ánh mặt bằng chung" in text
-    assert "106.0 triệu VND/m²" in text
-    assert "74.2 m²" in text
+    assert "Amber Riverside" in text
+    assert "1 căn" in text
     assert actions[0]["type"] == "overview"
+    assert actions[0]["overview"] == overview
 
 
-def test_not_found_prompt_explains_what_failed():
-    text = _not_found_prompt("khong co that 123")
-    assert '"khong co that 123"' in text
-    assert "Không tìm thấy dự án" in text
+class _FailIfCalledComposeLLM:
+    async def compose_text(self, *args, **kwargs):
+        raise AssertionError("Compose LLM must not rewrite deterministic safety text")
+
+
+async def test_guardrail_response_is_not_rewritten(skills, null_mcp):
+    ctx = NodeContext(
+        skills=skills,
+        mcp=null_mcp,
+        compose_llm=_FailIfCalledComposeLLM(),
+    )
+    state = {
+        "intent": None,
+        "guardrail": {
+            "code": "out_of_domain",
+            "message": "Em chỉ hỗ trợ bất động sản.",
+            "suggestions": [],
+        },
+        "cot": [],
+    }
+
+    out = await compose(state, ctx)
+
+    assert out["response_text"] == "Em chỉ hỗ trợ bất động sản."
+    assert out["actions"][0]["type"] == "clarify"
+
+
+async def test_unknown_response_is_not_rewritten(skills, null_mcp):
+    ctx = NodeContext(
+        skills=skills,
+        mcp=null_mcp,
+        compose_llm=_FailIfCalledComposeLLM(),
+    )
+
+    out = await compose({"intent": "UNKNOWN", "cot": []}, ctx)
+
+    assert "chưa xác định được nhu cầu bất động sản" in out["response_text"]
+    assert out["actions"][0]["type"] == "clarify"
