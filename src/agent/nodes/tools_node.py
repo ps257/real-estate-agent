@@ -243,12 +243,6 @@ async def _us6_compare(run: _ToolRun, slots: dict, state: AgentState) -> dict | 
     # MCP giới hạn 2-4; cắt bớt còn hơn để tool trả lỗi.
     listing_ids = listing_ids[:4]
     await run.call("compare_listings", {"listing_ids": listing_ids})
-    if "compare_nearby_amenities" in run._allow:
-        try:
-            await run.call("compare_nearby_amenities", {"listing_ids": listing_ids})
-        except Exception as exc:  # noqa: BLE001 — dữ liệu tiện ích là phần bổ sung.
-            logger.info("US6: compare_nearby_amenities không dùng được: %s", exc)
-            run.cot.append("tools: tiện ích lân cận chưa sẵn sàng -> bỏ qua")
     return None
 
 

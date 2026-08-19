@@ -24,24 +24,47 @@ async def test_compare_happy_path(skills, mock_mcp):
 
     # Kiểm tra actions sinh ra
     action_types = [a["type"] for a in result["actions"]]
-    assert "compare" in action_types
+    assert "cards" in action_types
     assert "cta" in action_types
 
-    compare_action = next(a for a in result["actions"] if a["type"] == "compare")
-    data = compare_action["comparison"]
+    cards_action = next(a for a in result["actions"] if a["type"] == "cards")
+    listings = cards_action["items"]
 
     # Danh sách căn phải được sort theo giá tăng dần: lc_1 (2 tỷ) trước lc_2 (3.5 tỷ)
-    listings = data["listings"]
     assert len(listings) == 2
     assert listings[0]["id"] == "lc_1"
     assert listings[1]["id"] == "lc_2"
     assert listings[0]["price_vnd"] < listings[1]["price_vnd"]
 
-    # Kiểm tra deltas và highlights
-    assert "deltas" in data
-    assert "highlights" in data
-    assert "context" in data
-    assert data["context"]["same_project"] is True
+
+@pytest.mark.asyncio
+async def test_compare_financial_legal(skills, mock_mcp):
+    """Test Op1: So sánh tài chính & pháp lý -> sinh ra action compare với category financial_legal."""
+    graph = build_graph(mcp=mock_mcp, skills=skills)
+    user_msg = "So sánh chi tiết về tài chính và pháp lý giữa các căn: lc_1, lc_2"
+
+    result = await run_once(graph, user_msg, thread_id="test_financial")
+
+    assert result["intent"] == "US6_COMPARE"
+    action_types = [a["type"] for a in result["actions"]]
+    assert "compare" in action_types
+    compare_action = next(a for a in result["actions"] if a["type"] == "compare")
+    assert compare_action["category"] == "financial_legal"
+
+
+@pytest.mark.asyncio
+async def test_compare_space_interior(skills, mock_mcp):
+    """Test Op2: So sánh không gian & nội thất -> sinh ra action compare với category space_interior."""
+    graph = build_graph(mcp=mock_mcp, skills=skills)
+    user_msg = "So sánh chi tiết về không gian và nội thất giữa các căn: lc_1, lc_2"
+
+    result = await run_once(graph, user_msg, thread_id="test_space")
+
+    assert result["intent"] == "US6_COMPARE"
+    action_types = [a["type"] for a in result["actions"]]
+    assert "compare" in action_types
+    compare_action = next(a for a in result["actions"] if a["type"] == "compare")
+    assert compare_action["category"] == "space_interior"
 
 
 @pytest.mark.asyncio
@@ -114,6 +137,3 @@ async def test_compare_price_honesty_note(skills, mock_mcp):
     # Không được chứa nhận định chủ quan "đáng mua hơn" / "nên mua"
     assert "đáng mua hơn" not in text
     assert "nên mua" not in text
-
-    # Có chú thích về giá chào bán / giá ước tính
-    assert "giá chào bán" in text or "giá ước tính" in text

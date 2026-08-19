@@ -187,39 +187,132 @@ def _c_us6_compare(results: list[dict], state: AgentState) -> tuple[str, list[di
             listing.get("price_vnd") or 0,
         ) if isinstance(listing, dict) else (True, 0),
     )
-    amenities = _result(results, "compare_nearby_amenities")
-    if amenities:
-        if isinstance(amenities, dict):
-            comparison["amenities"] = amenities.get("listings_amenities", amenities)
-        else:
-            comparison["amenities"] = amenities
     n = len(comparison["listings"])
     price_types = {
         listing.get("price_type")
         for listing in comparison["listings"]
         if isinstance(listing, dict) and listing.get("price_type")
     }
-    price_note = ""
-    if "asking" in price_types or "estimate" in price_types:
-        price_note = (
-            " Lưu ý: giá chào bán và giá ước tính là hai nguồn giá khác nhau, "
-            "được ghi rõ trên từng căn."
-        )
-    # KHÔNG khuyến nghị "căn nào đáng mua hơn" — Out of scope trong PRD.
-    return (
-        f"Dạ em đặt {n} căn cạnh nhau để anh/chị tiện đối chiếu ạ.{price_note}",
-        [
-            {"type": "compare", "comparison": comparison},
+
+    # Lấy tên căn rút gọn để hiển thị tự nhiên
+    titles = []
+    for l in comparison["listings"]:
+        if isinstance(l, dict):
+            title = l.get("title") or l.get("id") or "Căn hộ"
+            titles.append(title.split(" - Vinhomes")[0] if " - Vinhomes" in title else title)
+    
+    if len(titles) <= 1:
+        titles_str = titles[0] if titles else ""
+    elif len(titles) == 2:
+        titles_str = f"{titles[0]} và {titles[1]}"
+    else:
+        titles_str = f"{', '.join(titles[:-1])} và {titles[-1]}"
+
+    intro_text = f"Dạ em đã chuẩn bị bảng đối chiếu cho {n} căn anh/chị lựa chọn ({titles_str})."
+
+    followup_text = (
+        "Anh/chị muốn tìm hiểu sâu hơn về khía cạnh nào dưới đây ạ? "
+        "(ví dụ: Tài chính & Pháp lý, Không gian & Nội thất…)"
+    )
+
+    listing_ids = [
+        l.get("id")
+        for l in comparison["listings"]
+        if isinstance(l, dict) and l.get("id")
+    ]
+    ids_str = ", ".join(listing_ids)
+
+    user_msg = (state.get("user_input") or state.get("normalized_input") or "").lower()
+    is_financial = any(w in user_msg for w in ["tài chính", "pháp lý", "phap ly", "tai chinh"])
+    is_space = any(w in user_msg for w in ["không gian", "nội thất", "khong gian", "noi that", "phòng ngủ", "toilet"])
+
+    if is_financial:
+        text = f"Dạ em gửi anh/chị thông số chi tiết về **Tài chính & Pháp lý** giữa {n} căn ({titles_str}) ạ:"
+        actions = [
+            {
+                "type": "compare",
+                "category": "financial_legal",
+                "title": "Thông số Tài chính & Pháp lý",
+                "comparison": comparison,
+            },
             {
                 "type": "cta",
                 "items": [
-                    {"label": "Xem bản đồ", "intent": "US5_MAP"},
+                    {
+                        "label": "So sánh không gian & nội thất",
+                        "value": f"So sánh chi tiết về không gian và nội thất giữa các căn: {ids_str}",
+                        "display_text": f"So sánh chi tiết về không gian và nội thất giữa các căn: {titles_str}",
+                        "intent": "US6_COMPARE",
+                    },
+                    {"label": "Xem trên bản đồ", "intent": "US5_MAP"},
                     {"label": "Đặt lịch tham quan", "intent": "US2_1_VISIT"},
-                    {"label": "Tư vấn mua nhà", "intent": "US2_2_CONSULT"},
+                    {"label": "Tư vấn mua nhà 1:1", "intent": "US2_2_CONSULT"},
                 ],
             },
-        ],
+        ]
+        return text, actions
+
+    if is_space:
+        text = f"Dạ em gửi anh/chị thông số chi tiết về **Không gian & Nội thất** giữa {n} căn ({titles_str}) ạ:"
+        actions = [
+            {
+                "type": "compare",
+                "category": "space_interior",
+                "title": "Thông số Không gian & Nội thất",
+                "comparison": comparison,
+            },
+            {
+                "type": "cta",
+                "items": [
+                    {
+                        "label": "So sánh tài chính & pháp lý",
+                        "value": f"So sánh chi tiết về tài chính và pháp lý giữa các căn: {ids_str}",
+                        "display_text": f"So sánh chi tiết về tài chính và pháp lý giữa các căn: {titles_str}",
+                        "intent": "US6_COMPARE",
+                    },
+                    {"label": "Xem trên bản đồ", "intent": "US5_MAP"},
+                    {"label": "Đặt lịch tham quan", "intent": "US2_1_VISIT"},
+                    {"label": "Tư vấn mua nhà 1:1", "intent": "US2_2_CONSULT"},
+                ],
+            },
+        ]
+        return text, actions
+
+    # Mặc định: Bước chào đầu tiên (Thẻ căn hộ + dẫn dắt + 3 options)
+    intro_text = f"Dạ em đã chuẩn bị bảng đối chiếu cho {n} căn anh/chị lựa chọn ({titles_str})."
+
+    followup_text = (
+        "Anh/chị muốn tìm hiểu sâu hơn về khía cạnh nào dưới đây ạ? "
+        "(ví dụ: Tài chính & Pháp lý, Không gian & Nội thất…)"
     )
+
+    text = f"{intro_text}\n\n{followup_text}"
+
+    actions = [
+        {"type": "intro", "text": intro_text},
+        {"type": "cards", "items": comparison["listings"], "is_comparison": True},
+        {"type": "followup", "text": followup_text},
+        {
+            "type": "cta",
+            "items": [
+                {
+                    "label": "So sánh tài chính & pháp lý",
+                    "value": f"So sánh chi tiết về tài chính và pháp lý giữa các căn: {ids_str}",
+                    "display_text": f"So sánh chi tiết về tài chính và pháp lý giữa các căn: {titles_str}",
+                    "intent": "US6_COMPARE",
+                },
+                {
+                    "label": "So sánh không gian & nội thất",
+                    "value": f"So sánh chi tiết về không gian và nội thất giữa các căn: {ids_str}",
+                    "display_text": f"So sánh chi tiết về không gian và nội thất giữa các căn: {titles_str}",
+                    "intent": "US6_COMPARE",
+                },
+                {"label": "Xem trên bản đồ", "intent": "US5_MAP"},
+            ],
+        },
+    ]
+
+    return text, actions
 
 
 _COMPOSERS: dict[str, Callable[[list[dict], AgentState], tuple[str, list[dict]]]] = {
@@ -307,10 +400,10 @@ async def compose(state: AgentState, ctx: NodeContext) -> dict:
             fallback_text, actions = composer(state.get("tool_results", []), state)
             cot.append(f"compose: dựng {[a['type'] for a in actions] or 'text'} cho {intent}")
 
-    # Guardrail/UNKNOWN dùng thông điệp an toàn cố định; US4 dùng số liệu MCP
-    # nguyên bản. Không cho Compose LLM viết lại ba nhóm này.
+    # Guardrail/UNKNOWN dùng thông điệp an toàn cố định; US4/US6 dùng số liệu MCP
+    # nguyên bản. Không cho Compose LLM viết lại các nhóm này.
     deterministic = intent in (
-        "guardrail", "UNKNOWN", "clarify", "US4_ANALYTICS", "US5_MAP"
+        "guardrail", "UNKNOWN", "clarify", "US4_ANALYTICS", "US5_MAP", "US6_COMPARE"
     )
     if ctx.compose_llm and not deterministic:
         text = await ctx.compose_llm.compose_text(state, intent, actions, fallback_text)

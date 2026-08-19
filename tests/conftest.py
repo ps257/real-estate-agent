@@ -70,7 +70,6 @@ class MockCompareMCP:
     async def list_tools(self) -> list[str]:
         return [
             "compare_listings",
-            "compare_nearby_amenities",
             "calculate_commute_matrix",
             "search_listings",
             "resolve_project",

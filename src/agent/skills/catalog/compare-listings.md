@@ -4,8 +4,6 @@ intent: US6_COMPARE
 description: So sánh chi tiết 2-4 BĐS trong cùng dự án hoặc khác khu vực/tỉnh thành
 tools:
   - compare_listings
-  - compare_nearby_amenities
-  - calculate_commute_matrix
 required_slots:
   - listing_ids
 clarify_prompt: >
@@ -14,7 +12,7 @@ clarify_prompt: >
 
 # US6 — So sánh Bất Động Sản (Compare Listings)
 
-Kỹ năng này phục vụ nhu cầu so sánh trực quan từ 2 đến 4 bất động sản cụ thể (dựa trên danh sách `listing_ids`).
+Kỹ năng này phục vụ nhu cầu so sánh trực quan từ 2 đến 4 bất động sản cụ thể (dựa trên danh sách `listing_ids`) từ view `listings_clean`.
 
 ## 1. Mục tiêu & Nguyên tắc Nghiệp vụ
 - **Số lượng so sánh:** Bắt buộc tối thiểu 2 căn và tối đa 4 căn.
@@ -25,8 +23,7 @@ Kỹ năng này phục vụ nhu cầu so sánh trực quan từ 2 đến 4 bất
 - **Thứ tự trình bày:** Sắp xếp danh sách căn theo thứ tự **giá tăng dần (`price_vnd`)**.
 
 ## 2. Các MCP Tools khả dụng
-- `compare_listings(listing_ids=[...])`: Trả về dữ liệu chi tiết các căn, các trường so sánh (`fields`), đánh giá bối cảnh (`context`), chênh lệch (`deltas`) và huy hiệu số liệu nổi bật (`highlights`).
-- `compare_nearby_amenities(listing_ids=[...])`: (Tùy chọn) So sánh khoảng cách tới các tiện ích lân cận (trường học, bệnh viện, TTTM, công viên).
+- `compare_listings(listing_ids=[...])`: Trả về dữ liệu chi tiết các căn từ `listings_clean`, các trường so sánh (`fields`), đánh giá bối cảnh (`context`), chênh lệch (`deltas`) và huy hiệu số liệu nổi bật (`highlights`).
 
 ## 3. Cấu trúc Action sinh ra cho Mobile UI
 1. `action: {"type": "compare", "data": {...}}`:
