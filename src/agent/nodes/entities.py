@@ -39,7 +39,7 @@ def _clean_project_query(text: str) -> str:
 
 def _listing_ids_from_state(text: str, state: AgentState) -> list[str]:
     """Lấy mã căn deterministic từ câu hiện tại hoặc kết quả tìm kiếm trước."""
-    ids = list(dict.fromkeys(match.casefold() for match in _LISTING_ID_RE.findall(text)))
+    ids = list(dict.fromkeys(match.strip() for match in _LISTING_ID_RE.findall(text)))
     if len(ids) >= 2 or not re.search(r"(?:vừa tìm|ở trên|hai căn đó|2 căn đó)", text, re.I):
         return ids
 
@@ -50,7 +50,7 @@ def _listing_ids_from_state(text: str, state: AgentState) -> list[str]:
         if isinstance(payload, list):
             for listing in payload:
                 if isinstance(listing, dict) and listing.get("id"):
-                    ids.append(str(listing["id"]).casefold())
+                    ids.append(str(listing["id"]).strip())
         break
     return list(dict.fromkeys(ids))
 
