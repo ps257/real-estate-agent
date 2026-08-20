@@ -45,9 +45,10 @@ services:
     plan: free
     region: singapore
     healthCheckPath: /health
-    # Free tier chỉ 1 instance — bắt buộc, vì state hội thoại đang nằm trong RAM
-    # (MemorySaver ở src/agent/graph.py). Nhiều instance = hội thoại đứt quãng.
-    numInstances: 1
+    # KHÔNG khai numInstances: gói free vốn chỉ chạy 1 instance và khoá tuỳ chọn
+    # scaling, khai vào có thể bị từ chối lúc apply. Khi nâng lên gói trả phí,
+    # vẫn phải giữ 1 instance cho tới khi state hội thoại rời khỏi RAM —
+    # MemorySaver ở src/agent/graph.py không chia sẻ được giữa các instance.
     envVars:
       - key: PORT            # Dockerfile hardcode uvicorn --port 8000
         value: 8000
