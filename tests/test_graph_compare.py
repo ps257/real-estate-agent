@@ -134,6 +134,21 @@ async def test_compare_price_honesty_note(skills, mock_mcp):
     result = await run_once(graph, user_msg, thread_id="test_honesty")
 
     text = result["text"]
-    # Không được chứa nhận định chủ quan "đáng mua hơn" / "nên mua"
     assert "đáng mua hơn" not in text
     assert "nên mua" not in text
+
+
+def test_generate_comparison_summary_none_values():
+    """Kiểm tra _generate_comparison_summary không bị crash khi các trường dữ liệu là None."""
+    from agent.nodes.compose import _generate_comparison_summary
+
+    listings = [
+        {"id": "c1", "title": "Căn 1", "floor_num": None, "floor_band": None, "price_vnd": None, "area_m2": None},
+        {"id": "c2", "title": "Căn 2", "floor_num": 18, "floor_band": "Tầng cao", "price_vnd": 2000000000, "area_m2": 50},
+    ]
+
+    summary_space = _generate_comparison_summary(listings, "space_interior")
+    assert isinstance(summary_space, str)
+
+    summary_fin = _generate_comparison_summary(listings, "financial_legal")
+    assert isinstance(summary_fin, str)
