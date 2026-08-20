@@ -1,0 +1,85 @@
+# Render Blueprint — deploy mcp + agent lên free tier.
+#
+# Free tier KHÔNG có Private Service, nên mcp buộc phải là web service public;
+# nó được bảo vệ bằng MCP_AUTH_TOKEN (shared secret) thay cho private network.
+#
+# Cách dùng: Render Dashboard > New > Blueprint > trỏ vào repo này.
+# Các biến `sync: false` sẽ được Render hỏi lúc apply, không lưu trong git.
+
+services:
+  # ---------- MCP server ----------
+  - type: web
+    name: real-estate-mcp
+    runtime: docker
+    repo: https://github.com/conhv/real-estate-mcp
+    branch: main
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: singapore
+    # KHÔNG đặt healthCheckPath: endpoint duy nhất là /mcp và nó trả 401 khi
+    # thiếu token -> Render sẽ coi là fail. Để trống thì Render chỉ kiểm tra
+    # tiến trình có mở port hay không.
+    envVars:
+      - key: PORT            # Dockerfile bind MCP_PORT=8000; cho Render biết
+        value: 8000
+      - key: MCP_TRANSPORT
+        value: http
+      - key: MCP_HOST
+        value: 0.0.0.0
+      - key: MCP_PORT
+        value: 8000
+      - key: MCP_AUTH_TOKEN  # dán CÙNG một giá trị vào MCP_SERVER_HEADERS bên agent
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+
+  # ---------- Agent server ----------
+  - type: web
+    name: real-estate-agent
+    runtime: docker
+    repo: https://github.com/conhv/real-estate-agent
+    branch: main
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: singapore
+    healthCheckPath: /health
+    # Free tier chỉ 1 instance — bắt buộc, vì state hội thoại đang nằm trong RAM
+    # (MemorySaver ở src/agent/graph.py). Nhiều instance = hội thoại đứt quãng.
+    numInstances: 1
+    envVars:
+      - key: PORT            # Dockerfile hardcode uvicorn --port 8000
+        value: 8000
+      - key: HOST
+        value: 0.0.0.0
+      - key: MCP_TRANSPORT
+        value: http
+      # Render không nội suy được URL service khác vào chuỗi -> điền tay sau khi
+      # mcp deploy xong: https://real-estate-mcp-xxxx.onrender.com/mcp
+      - key: MCP_SERVER_URL
+        sync: false
+      # Dạng "Authorization=Bearer <MCP_AUTH_TOKEN>" — đúng token đặt ở mcp.
+      - key: MCP_SERVER_HEADERS
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: AGENT_LLM_MODEL
+        value: gpt-5.6
+      - key: GUARDRAIL_LLM_MODEL
+        value: gpt-4o-mini
+      - key: INTENT_LLM_MODEL
+        value: gpt-4o-mini
+      - key: ENTITIES_LLM_MODEL
+        value: gpt-4o-mini
+      # Domain Vercel của frontend — điền sau, đừng để "*".
+      - key: CORS_ALLOW_ORIGINS
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: AGENT_EXPOSE_REASONING
+        value: false
+      # Trống: frontend chưa gửi header Authorization nên bật key sẽ làm mọi
+      # request 401.
+      - key: AGENT_API_KEYS
+        value: ""
