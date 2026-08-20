@@ -16,9 +16,11 @@ services:
     dockerfilePath: ./Dockerfile
     plan: free
     region: singapore
-    # KHÔNG đặt healthCheckPath: endpoint duy nhất là /mcp và nó trả 401 khi
-    # thiếu token -> Render sẽ coi là fail. Để trống thì Render chỉ kiểm tra
-    # tiến trình có mở port hay không.
+    # /healthz, không phải /mcp: /mcp trả 401 khi thiếu token nên Render sẽ
+    # đọc là fail. Probe này cũng là thứ giữ service không ngủ — thiếu nó, tool
+    # call đầu tiên của agent rơi vào cold start (~24s đo thực tế) và trả 500
+    # thay vì chờ.
+    healthCheckPath: /healthz
     envVars:
       - key: PORT            # Dockerfile bind MCP_PORT=8000; cho Render biết
         value: 8000
