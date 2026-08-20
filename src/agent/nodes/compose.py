@@ -50,6 +50,26 @@ def _c_us1_search(results: list[dict], state: AgentState) -> tuple[str, list[dic
     if not isinstance(listings, list) or not listings:
         return "Dạ hiện em chưa tìm thấy kết quả phù hợp. Anh/chị thử đổi tiêu chí giúp em ạ?", []
 
+    # Bổ sung thông tin dự án/tỉnh từ resolve_project hoặc slots nếu listing thiếu
+    res_proj = _result(results, "resolve_project")
+    proj_info = res_proj.get("project") if isinstance(res_proj, dict) else None
+    fallback_proj_name = proj_info.get("name") if isinstance(proj_info, dict) else (state.get("slots") or {}).get("project")
+    fallback_province = proj_info.get("province") if isinstance(proj_info, dict) else (state.get("slots") or {}).get("province")
+
+    for item in listings:
+        if isinstance(item, dict):
+            if not item.get("project_name") and fallback_proj_name:
+                item["project_name"] = fallback_proj_name
+            if not item.get("province") and fallback_province:
+                item["province"] = fallback_province
+            if not item.get("address"):
+                parts = [item.get("district"), item.get("province") or fallback_province]
+                addr = ", ".join([p for p in parts if p])
+                if addr:
+                    item["address"] = addr
+                elif fallback_proj_name:
+                    item["address"] = fallback_proj_name
+
     actions: list[dict] = [{"type": "cards", "items": listings}]
 
     # MCP tool lỗi -> parse_tool_result trả str thay vì dict.
@@ -82,6 +102,23 @@ def _c_us3_detail(results: list[dict], state: AgentState) -> tuple[str, list[dic
 
     if not isinstance(listing, dict):
         return "Dạ em chưa lấy được chi tiết của căn hộ này ạ.", []
+
+    res_proj = _result(results, "resolve_project")
+    proj_info = res_proj.get("project") if isinstance(res_proj, dict) else None
+    fallback_proj_name = proj_info.get("name") if isinstance(proj_info, dict) else (state.get("slots") or {}).get("project")
+    fallback_province = proj_info.get("province") if isinstance(proj_info, dict) else (state.get("slots") or {}).get("province")
+
+    if not listing.get("project_name") and fallback_proj_name:
+        listing["project_name"] = fallback_proj_name
+    if not listing.get("province") and fallback_province:
+        listing["province"] = fallback_province
+    if not listing.get("address"):
+        parts = [listing.get("district"), listing.get("province") or fallback_province]
+        addr = ", ".join([p for p in parts if p])
+        if addr:
+            listing["address"] = addr
+        elif fallback_proj_name:
+            listing["address"] = fallback_proj_name
 
     title = listing.get("title") or "Bất động sản"
     text = f"Dạ em gửi anh/chị thông tin chi tiết về {title} ạ."
@@ -293,136 +330,91 @@ def _format_location_phrase(common_project: str | None, common_province: str | N
     return "anh/chị lựa chọn"
 
 
+def _is_missing(val) -> bool:
+    if val is None:
+        return True
+    s = str(val).strip().lower()
+    return s in ("", "none", "null", "k", "khong", "k_co", "0", "-", "unknown", "chua_ro")
+
+
 def _generate_comparison_summary(listings: list[dict], category: str, common_project: str | None = None) -> str:
     if not listings or len(listings) < 2:
         return ""
 
-    def st(l: dict) -> str:
-        return _format_short_title(l, common_project)
+    def st_item(l: dict) -> str:
+        t = _format_short_title(l, common_project)
+        return t if t.lower().startswith("căn ") else f"căn {t}"
 
     if category == "financial_legal":
-        valid_prices = [
-            l for l in listings
-            if isinstance(l, dict) and l.get("price_vnd") and l.get("price_vnd") > 0
-        ]
-        valid_areas = [
-            l for l in listings
-            if isinstance(l, dict) and l.get("area_m2") and l.get("area_m2") > 0
-        ]
+        valid_prices = [l for l in listings if isinstance(l, dict) and l.get("price_vnd") and l["price_vnd"] > 0]
+        if len(valid_prices) >= 2:
+            min_p = min(valid_prices, key=lambda x: x["price_vnd"])
+            max_p = max(valid_prices, key=lambda x: x["price_vnd"])
+            diff = max_p["price_vnd"] - min_p["price_vnd"]
+            if diff >= 1e9:
+                diff_val = diff / 1e9
+                diff_str = f"{diff_val:.2f}".rstrip("0").rstrip(".") + " tỷ đồng"
+                return f"Về tài chính và pháp lý, các căn có mức giá chênh lệch đáng kể khoảng {diff_str}, trong khi đơn giá, tình trạng pháp lý và hiện trạng sử dụng có sự khác biệt giữa các căn."
 
-        sentences = []
-
-        # 1. So sánh Giá & Pháp lý
-        price_legal_parts = []
-        cheapest = None
-        if valid_prices:
-            cheapest = min(valid_prices, key=lambda x: x["price_vnd"])
-            p_val = cheapest["price_vnd"] / 1e9
-            p_min = f"{p_val:.2f}".rstrip("0").rstrip(".") + " tỷ"
-            ppm = cheapest.get("price_per_m2_vnd")
-            ppm_str = f" ~ {round(ppm / 1e6)} tr/m²" if ppm else ""
-
-            c_text = f"{st(cheapest)} có mức giá tốt nhất ({p_min}{ppm_str})"
-            if cheapest.get("legal_status") == "so_do":
-                c_text += " kèm pháp lý Sổ đỏ"
-            price_legal_parts.append(c_text)
-
-            # Nếu không có dữ liệu diện tích mà có căn khác, đối chiếu giá căn còn lại
-            if not valid_areas:
-                others = [l for l in valid_prices if l.get("id") != cheapest.get("id")]
-                if others:
-                    other = others[0]
-                    o_val = other["price_vnd"] / 1e9
-                    o_str = f"{o_val:.2f}".rstrip("0").rstrip(".") + " tỷ"
-                    price_legal_parts.append(f"{st(other)} có mức giá {o_str}")
-
-        # Căn rộng nhất
-        if valid_areas:
-            largest = max(valid_areas, key=lambda x: x["area_m2"])
-            if not cheapest or largest.get("id") != cheapest.get("id"):
-                a_max = f"{largest['area_m2']:.1f}".rstrip("0").rstrip(".") + " m²"
-                price_legal_parts.append(f"căn {st(largest)} nhỉnh hơn về diện tích ({a_max})")
-
-        if price_legal_parts:
-            sentences.append(", trong khi ".join(price_legal_parts) + ".")
-
-        # 2. Tình trạng thực tế
-        usages = {l.get("usage_status") for l in listings if isinstance(l, dict) and l.get("usage_status")}
-        usage_map = {
-            "trong": "đang để trống và sẵn sàng bàn giao ngay",
-            "cho_thue": "đang có hợp đồng cho thuê ổn định",
-            "dang_o": "đang có chủ ở",
-        }
-        if len(usages) == 1 and usage_map.get(list(usages)[0]):
-            sentences.append(f"Hiện các căn đều {usage_map[list(usages)[0]]}.")
-
-        return " ".join(sentences)
+        return "Về tài chính và pháp lý, mức giá và đơn giá giữa các căn khá tương đồng, trong khi tình trạng pháp lý và hiện trạng sử dụng có sự khác biệt giữa các căn."
 
     if category == "space_interior":
-        sentences = []
-
-        # 1. Loại căn & Tầng
-        bed_types = []
-        for l in listings:
-            if isinstance(l, dict):
-                norm = l.get("bedrooms_norm")
-                has_flex = bool(l.get("bedrooms_plus") or l.get("has_flex_room"))
-                if norm == 0:
-                    bed_types.append("Studio")
-                elif norm:
-                    bed_types.append(f"{norm}PN+1" if has_flex else f"{norm}PN")
-
-        distinct_beds = sorted(list(set(bed_types)))
-        bed_str = distinct_beds[0] if len(distinct_beds) == 1 else "/".join(distinct_beds)
-
-        has_high_floor = any(
-            isinstance(l, dict)
-            and (
-                (isinstance(l.get("floor_num"), (int, float)) and l["floor_num"] > 15)
-                or "cao" in str(l.get("floor_band") or "").lower()
-            )
-            for l in listings
-        )
-        floor_note = " ở vị trí tầng cao thoáng đãng" if has_high_floor else ""
-
-        if bed_str:
-            sentences.append(f"Các căn đều thuộc loại hình căn hộ {bed_str}{floor_note}.")
-        else:
-            p_map = {"shophouse": "Shophouse", "biet_thu": "Biệt thự", "nha_pho": "Nhà phố", "can_ho": "Căn hộ"}
-            ptypes = list({p_map.get(l.get("property_type"), l.get("property_type")) for l in listings if isinstance(l, dict) and l.get("property_type") and p_map.get(l.get("property_type")) != "unknown"})
-            if ptypes:
-                sentences.append(f"Danh sách gồm các bất động sản loại hình {', '.join(ptypes)}{floor_note}.")
-
-        # 2. View & Nội thất
-        view_furn_items = []
-        furn_short = {
-            "cao_cap": "nội thất cao cấp",
-            "co_ban": "nội thất cơ bản",
-            "day_du": "đủ nội thất",
-            "tho": "nhà thô",
-        }
-        for l in listings:
-            if isinstance(l, dict):
-                f_txt = furn_short.get(l.get("furnishing"))
-                v_txt = (
-                    l.get("view").strip()
-                    if (l.get("view") and l.get("view").strip().lower() not in ("k", "khong", "k_co", "0", "null", "-"))
-                    else None
-                )
-                details = []
-                if v_txt:
-                    details.append(f"view {v_txt}")
-                if f_txt:
-                    details.append(f_txt)
-                if details:
-                    view_furn_items.append(f"căn {st(l)} có {', '.join(details)}")
-
-        if view_furn_items:
-            sentences.append(f"Về thiết kế: {', trong khi '.join(view_furn_items)}.")
-
-        return " ".join(sentences)
+        return "Về không gian và nội thất, các căn chủ yếu khác biệt ở loại phòng, số phòng vệ sinh, vị trí tầng, tầm nhìn view và mức độ hoàn thiện nội thất."
 
     return ""
+
+
+_PROJECT_HIGHLIGHTS: dict[str, tuple[str, str]] = {
+    "ocean-park": (
+        "Gia Lâm, Hà Nội",
+        "không gian sống sinh thái đại đô thị biển hồ, hồ nước ngọt 24.5ha và hệ sinh thái tiện ích all-in-one đẳng cấp",
+    ),
+    "ocean park": (
+        "Gia Lâm, Hà Nội",
+        "không gian sống sinh thái đại đô thị biển hồ, hồ nước ngọt 24.5ha và hệ sinh thái tiện ích all-in-one đẳng cấp",
+    ),
+    "smart-city": (
+        "Nam Từ Liêm, Hà Nội",
+        "quy mô đại đô thị thông minh, công viên trung tâm 10.2ha cùng chuỗi tiện ích đa dạng",
+    ),
+    "smart city": (
+        "Nam Từ Liêm, Hà Nội",
+        "quy mô đại đô thị thông minh, công viên trung tâm 10.2ha cùng chuỗi tiện ích đa dạng",
+    ),
+    "imperia": (
+        "Nam Từ Liêm, Hà Nội",
+        "vị trí trung tâm đại đô thị thông minh phía Tây, công viên cảnh quan và chuỗi tiện ích cao cấp",
+    ),
+    "sola park": (
+        "Nam Từ Liêm, Hà Nội",
+        "vị trí đắc địa tại đại đô thị thông minh phía Tây cùng không gian sống xanh năng động",
+    ),
+    "grand-park": (
+        "TP. Thủ Đức, TP. Hồ Chí Minh",
+        "đại công viên 36ha hàng đầu Đông Nam Á và không gian sống xanh hiện đại",
+    ),
+    "grand park": (
+        "TP. Thủ Đức, TP. Hồ Chí Minh",
+        "đại công viên 36ha hàng đầu Đông Nam Á và không gian sống xanh hiện đại",
+    ),
+    "amber-riverside": (
+        "Hai Bà Trưng, Hà Nội",
+        "vị trí kết nối thuận tiện ven sông Hồng cùng hệ tiện ích nội khu đầy đủ",
+    ),
+    "amber riverside": (
+        "Hai Bà Trưng, Hà Nội",
+        "vị trí kết nối thuận tiện ven sông Hồng cùng hệ tiện ích nội khu đầy đủ",
+    ),
+}
+
+
+def _get_project_highlight(project_name: str, province: str | None = None) -> tuple[str, str]:
+    name_low = project_name.lower()
+    for k, (loc, hl) in _PROJECT_HIGHLIGHTS.items():
+        if k in name_low:
+            return loc, hl
+    loc = province or "khu vực trung tâm"
+    return loc, "vị trí kết nối thuận lợi cùng hệ thống hạ tầng và tiện ích dịch vụ đồng bộ"
 
 
 def _c_us6_compare(
@@ -456,12 +448,16 @@ def _c_us6_compare(
     ]
     ids_str = ", ".join(listing_ids)
 
+    def st_item(l: dict) -> str:
+        t = _format_short_title(l, common_project)
+        return t if t.lower().startswith("căn ") else f"căn {t}"
+
     user_msg = (state.get("user_input") or state.get("normalized_input") or "").lower()
     is_financial = any(w in user_msg for w in ["tài chính", "pháp lý", "phap ly", "tai chinh"])
     is_space = any(w in user_msg for w in ["không gian", "nội thất", "khong gian", "noi that", "phòng ngủ", "toilet"])
 
     if is_financial:
-        text = f"Dạ em gửi anh/chị thông số chi tiết về Tài chính & Pháp lý cho {n} căn {loc_phrase} ({titles_str}) ạ:"
+        summary = _generate_comparison_summary(comparison["listings"], "financial_legal", common_project)
         actions = [
             {
                 "type": "compare",
@@ -484,10 +480,10 @@ def _c_us6_compare(
                 ],
             },
         ]
-        return text, actions
+        return summary, actions
 
     if is_space:
-        text = f"Dạ em gửi anh/chị thông số chi tiết về Không gian & Nội thất cho {n} căn {loc_phrase} ({titles_str}) ạ:"
+        summary = _generate_comparison_summary(comparison["listings"], "space_interior", common_project)
         actions = [
             {
                 "type": "compare",
@@ -510,22 +506,35 @@ def _c_us6_compare(
                 ],
             },
         ]
-        return text, actions
+        return summary, actions
 
-    # Mặc định: Bước chào đầu tiên (Thẻ căn hộ + dẫn dắt + 3 options)
-    intro_text = f"Dạ em đã chuẩn bị bảng đối chiếu cho {n} căn {loc_phrase} ({titles_str})."
+    # Mặc định: Khái quát ngắn các căn hộ thuộc dự án gì, nằm ở đâu, dự án đó có gì nổi bật
+    projects_info: list[tuple[str, str, str]] = []
+    seen_projects: set[str] = set()
 
-    followup_text = (
-        "Anh/chị muốn tìm hiểu sâu hơn về khía cạnh nào dưới đây ạ? "
-        "(ví dụ: Tài chính & Pháp lý, Không gian & Nội thất…)"
-    )
+    for l in comparison["listings"]:
+        p_name = l.get("project_name") or l.get("project_title")
+        if not p_name and l.get("project_id"):
+            p_name = _clean_project_name(l["project_id"])
+        if not p_name and common_project:
+            p_name = common_project
+        if not p_name:
+            p_name = "Dự án"
 
-    text = f"{intro_text}\n\n{followup_text}"
+        if p_name not in seen_projects:
+            seen_projects.add(p_name)
+            loc, hl = _get_project_highlight(p_name, common_province)
+            projects_info.append((p_name, loc, hl))
+
+    if len(projects_info) == 1:
+        p_name, loc, hl = projects_info[0]
+        text = f"Các căn hộ anh/chị đang quan tâm đều thuộc dự án {p_name} tại {loc}, nổi bật với {hl}."
+    else:
+        p_descs = [f"{p} tại {loc} (nổi bật với {hl})" for p, loc, hl in projects_info]
+        text = f"Danh sách đối chiếu gồm các căn hộ thuộc các dự án: {'; '.join(p_descs)}."
 
     actions = [
-        {"type": "intro", "text": intro_text},
         {"type": "cards", "items": comparison["listings"], "is_comparison": True},
-        {"type": "followup", "text": followup_text},
         {
             "type": "cta",
             "items": [
@@ -542,6 +551,7 @@ def _c_us6_compare(
                     "intent": "US6_COMPARE",
                 },
                 {"label": "Xem trên bản đồ", "intent": "US5_MAP"},
+                {"label": "Đặt lịch tham quan", "intent": "US2_1_VISIT"},
             ],
         },
     ]

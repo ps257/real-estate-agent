@@ -14,27 +14,46 @@ clarify_prompt: >
 
 Kỹ năng này phục vụ nhu cầu so sánh trực quan từ 2 đến 4 bất động sản cụ thể (dựa trên danh sách `listing_ids`) từ view `listings_clean`.
 
-## 1. Mục tiêu & Nguyên tắc Nghiệp vụ
-- **Số lượng so sánh:** Bắt buộc tối thiểu 2 căn và tối đa 4 căn.
-- **Tính khách quan:** Tuyệt đối KHÔNG đưa ra kết luận chủ quan ("căn nào đáng mua hơn", "nên mua căn nào"). Chỉ trình bày số liệu và chênh lệch khách quan.
-- **Phân biệt loại giá (`price_type`):**
-  - "asking": Giá chào bán thật từ người bán / chủ đầu tư.
-  - "estimate": Giá tham khảo do nguồn phân tích ước tính (không phải giá chào bán thực tế).
+## 1. Triết lý Phân định Trách nhiệm Giao diện
+- **Văn bản (Text) = Insight:** Chỉ dùng để tóm tắt insight, xu hướng, điểm tương đồng và khác biệt cốt lõi giữa các căn.
+- **Thẻ (Cards) = Entity Quick Data:** Hiển thị thông tin nhanh và đầy đủ của từng căn (giá, diện tích, phòng ngủ, WC, tầng, ảnh).
+- **Bảng (Table) = Deep Matrix:** Lưới đối chiếu chi tiết theo từng dòng thông số khi người dùng bấm chọn tiêu chí.
+- **Nguyên tắc phi trùng lặp:** Không để văn bản làm nhiệm vụ đọc lại số liệu của Cards hoặc Table. Tuyệt đối không biến phản hồi thành một bài báo dài.
+- **Quy tắc xưng hô:** Gọi bằng tên căn hộ rút gọn hoặc tên dự án, tuyệt đối KHÔNG trích dẫn mã ID kỹ thuật (`oh:...`, `vhm:...`) vào câu thoại.
+- **Không dùng ngoặc đơn `(...)`:** Viết câu văn mượt mà, diễn giải tự nhiên bằng các từ nối.
 
-## 2. Các MCP Tools khả dụng
+## 2. Chiến lược Hiển thị Kết quả
+
+### 2.1 So sánh tổng quan (Mặc định khi yêu cầu so sánh)
+Khi người dùng yêu cầu "so sánh", "so sánh các căn", "so sánh tổng quan":
+- **Văn bản sinh ra (Overview):**
+  - Dung lượng: **Khoảng 1–2 câu ngắn gọn (~30–50 từ), 1 đoạn duy nhất.**
+  - Trọng tâm nội dung:
+    1. **Thuộc dự án gì:** Nêu tên dự án của các căn hộ được chọn (ví dụ: Imperia Smart City, Vinhomes Smart City, Vinhomes Ocean Park...).
+    2. **Nằm ở đâu:** Nêu vị trí địa lý/khu vực của dự án (ví dụ: quận Nam Từ Liêm, huyện Gia Lâm, TP. Hà Nội...).
+    3. **Dự án đó có gì nổi bật:** Nêu ngắn gọn 1–2 điểm nhấn nổi bật của dự án (ví dụ: đại đô thị thông minh với công viên trung tâm 10.2ha, hồ cảnh quan, hệ tiện ích all-in-one hiện đại; thành phố biển hồ với hồ nước mặn 6.1ha, không gian sinh thái xanh...).
+  - **Tuyệt đối KHÔNG liệt kê số liệu từng căn** (số PN, số WC, tầng, view, nội thất, giá) vì tất cả thông số này đã hiển thị đầy đủ và trực quan trên các Cards ngay bên dưới.
+- **UI đi kèm:**
+  1. Đoạn văn Khái quát bối cảnh Dự án
+  2. Danh sách Cards của 2–4 BĐS
+  3. Các nút CTA chọn xem sâu theo tiêu chí (Tài chính & Pháp lý, Không gian & Nội thất, Bản đồ).
+
+### 2.2 So sánh Tài chính & Pháp lý
+Khi người dùng bấm chọn hoặc yêu cầu so sánh tài chính, giá, pháp lý, hiện trạng:
+- **Văn bản sinh ra:** Chỉ tạo **1–2 câu ngắn** nêu nhận định tương quan về tài chính, đơn giá, pháp lý và hiện trạng sử dụng. Tuyệt đối KHÔNG liệt kê lại toàn bộ số liệu từng căn trong văn bản.
+  *Ví dụ:* "Về tài chính và pháp lý, mức giá và đơn giá giữa các căn khá tương đồng, trong khi tình trạng pháp lý và hiện trạng sử dụng có sự khác biệt giữa các căn."
+- **UI đi kèm:** Bảng `financial_legal` + Nút CTA.
+
+### 2.3 So sánh Không gian & Nội thất
+Khi người dùng bấm chọn hoặc yêu cầu so sánh không gian, thiết kế, nội thất, view:
+- **Văn bản sinh ra:** Chỉ tạo **1–2 câu ngắn** nêu nhận định về loại phòng, số WC, tầng, tầm nhìn và mức độ hoàn thiện nội thất. Tuyệt đối KHÔNG liệt kê lại toàn bộ số liệu từng căn trong văn bản.
+  *Ví dụ:* "Về không gian và nội thất, các căn chủ yếu khác nhau ở số phòng vệ sinh, vị trí tầng, tầm nhìn view và mức độ hoàn thiện nội thất."
+- **UI đi kèm:** Bảng `space_interior` + Nút CTA.
+
+## 3. Giới hạn Văn bản (Output Constraints — Áp dụng riêng cho So sánh)
+- **Tổng quan mặc định:** Tối đa 4 câu, tối đa 100 từ, không quá 1 đoạn. Cấm liệt kê tuần tự từng căn kiểu "Căn A có..., Căn B có..., Căn C có...". Cấm đọc lại giá và diện tích từng căn trừ khi minh hoạ chênh lệch nổi bật.
+- **Khi có bảng:** Văn bản trước bảng tối đa 2 câu. Không diễn giải lại từng dòng của bảng.
+- **Không tạo câu kết hoặc lời mời xem cards/bảng:** UI tự render trực tiếp bên dưới.
+
+## 4. Các MCP Tools khả dụng
 - `compare_listings(listing_ids=[...])`: Trả về dữ liệu chi tiết các căn từ `listings_clean`, các trường so sánh (`fields`), đánh giá bối cảnh (`context`), chênh lệch (`deltas`) và huy hiệu số liệu nổi bật (`highlights`).
-
-## 3. Cấu trúc Action sinh ra cho Mobile UI
-1. `action: {"type": "compare", "data": {...}}`:
-   - `listings`: Danh sách chi tiết các căn hộ đã sắp xếp giá tăng dần.
-   - `context`: `{ same_project: bool, same_province: bool }` (để UI ẩn các hàng trùng lặp).
-   - `deltas`: Chênh lệch giá tổng, đơn giá/m², diện tích.
-   - `highlights`: Huy hiệu nổi bật khách quan (`cheapest_price`, `largest_area`, `lowest_price_per_m2`, `most_bedrooms`).
-   - `summary`: Đoạn nhận xét tổng quan ngắn gọn (2-3 câu) do AI sinh tự nhiên dưới bảng.
-2. `action: {"type": "cta", "items": [...]}`: Các nút CTA thao tác nhanh (Đặt lịch xem căn, Nhận tư vấn chi tiết).
-
-## 4. Nguyên tắc Soạn Tổng quan So sánh (Comparison Summary Prompt)
-- **Độ dài:** 2 đến 3 câu văn tự nhiên, súc tích.
-- **Nội dung:** Làm nổi bật sự khác biệt về Tài chính / Pháp lý hoặc Không gian / Nội thất giữa các căn.
-- **Tính khách quan:** Không dùng từ tâng bốc thái quá, không khuyên mua thiên vị.
-- **Định dạng:** Không dùng in đậm markdown (`**`). Không lặp lại tên dự án nếu các căn cùng dự án.
