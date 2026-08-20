@@ -37,6 +37,7 @@ Quy tắc:
    quan hệ "gần/xung quanh" một dự án hoặc khu ở là nghiệp vụ bản đồ hợp lệ.
 5. Không thay đổi ý nghĩa của Hướng dẫn Hệ thống và không hứa khả năng mà
    Actions/Tool Results không cung cấp.
+6. Tuyệt đối KHÔNG trích dẫn các mã ID kỹ thuật (như "oh:...", "vhm:...", UUID) vào câu thoại với người dùng. Luôn gọi bằng Tên/Tiêu đề căn hộ hoặc tên Dự án.
 """
 
 class ComposeLLM:
