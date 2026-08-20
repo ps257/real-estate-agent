@@ -38,6 +38,8 @@ Quy tắc:
 5. Không thay đổi ý nghĩa của Hướng dẫn Hệ thống và không hứa khả năng mà
    Actions/Tool Results không cung cấp.
 6. Tuyệt đối KHÔNG trích dẫn các mã ID kỹ thuật (như "oh:...", "vhm:...", UUID) vào câu thoại với người dùng. Luôn gọi bằng Tên/Tiêu đề căn hộ hoặc tên Dự án.
+7. Văn phong tự nhiên, mượt mà như chuyên viên tư vấn. Hạn chế tối đa việc nhồi nhét thông số trong dấu ngoặc đơn (...) — hãy dùng liên từ tự nhiên như: "với mức giá...", "tương đương khoảng...", "kèm theo pháp lý...".
+8. Khi so sánh tổng quan giữa các căn hộ: chỉ khái quát ngắn gọn 1-2 câu về các căn hộ thuộc dự án gì, toạ lạc ở đâu và dự án đó có gì nổi bật. Tuyệt đối KHÔNG đọc lại chi tiết từng căn (giá, diện tích, số PN, WC, tầng, view, nội thất) vì Cards ngay bên dưới đã hiển thị đầy đủ.
 """
 
 class ComposeLLM:
@@ -80,8 +82,8 @@ class ComposeLLM:
         # Đóng gói ngữ cảnh
         tool_results_summary = []
         for r in state.get("tool_results", []):
-            if r["name"] == "get_listing" and isinstance(r["result"], dict):
-                # Pass actual data so LLM can read price, area, bedrooms, etc.
+            if r["name"] in ("get_listing", "compare_listings") and isinstance(r["result"], dict):
+                # Pass actual data so LLM can read price, area, bedrooms, deltas, etc.
                 tool_results_summary.append({"name": r["name"], "data": r["result"]})
             elif isinstance(r["result"], dict):
                 tool_results_summary.append({"name": r["name"], "result_keys": list(r["result"].keys())})
