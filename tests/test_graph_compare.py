@@ -1,0 +1,154 @@
+"""Kiểm thử tính năng So sánh Bất Động Sản (US6_COMPARE) trong LangGraph."""
+
+from __future__ import annotations
+
+import pytest
+
+from agent.graph import build_graph
+from agent.runner import run_once
+
+
+@pytest.mark.asyncio
+async def test_compare_happy_path(skills, mock_mcp):
+    """Test Happy Path: Truyền đủ 2 căn -> gọi compare_listings và trả về action compare + CTA."""
+    graph = build_graph(mcp=mock_mcp, skills=skills)
+    user_msg = "So sánh 2 căn lc_1 và căn lc_2 giúp mình với"
+
+    result = await run_once(graph, user_msg, thread_id="test_happy")
+
+    assert result["intent"] == "US6_COMPARE"
+
+    # Kiểm tra tool_calls
+    tool_names = [call["name"] for call in result["tool_calls"]]
+    assert "compare_listings" in tool_names
+
+    # Kiểm tra actions sinh ra
+    action_types = [a["type"] for a in result["actions"]]
+    assert "cards" in action_types
+    assert "cta" in action_types
+
+    cards_action = next(a for a in result["actions"] if a["type"] == "cards")
+    listings = cards_action["items"]
+
+    # Danh sách căn phải được sort theo giá tăng dần: lc_1 (2 tỷ) trước lc_2 (3.5 tỷ)
+    assert len(listings) == 2
+    assert listings[0]["id"] == "lc_1"
+    assert listings[1]["id"] == "lc_2"
+    assert listings[0]["price_vnd"] < listings[1]["price_vnd"]
+
+
+@pytest.mark.asyncio
+async def test_compare_financial_legal(skills, mock_mcp):
+    """Test Op1: So sánh tài chính & pháp lý -> sinh ra action compare với category financial_legal."""
+    graph = build_graph(mcp=mock_mcp, skills=skills)
+    user_msg = "So sánh chi tiết về tài chính và pháp lý giữa các căn: lc_1, lc_2"
+
+    result = await run_once(graph, user_msg, thread_id="test_financial")
+
+    assert result["intent"] == "US6_COMPARE"
+    action_types = [a["type"] for a in result["actions"]]
+    assert "compare" in action_types
+    compare_action = next(a for a in result["actions"] if a["type"] == "compare")
+    assert compare_action["category"] == "financial_legal"
+
+
+@pytest.mark.asyncio
+async def test_compare_space_interior(skills, mock_mcp):
+    """Test Op2: So sánh không gian & nội thất -> sinh ra action compare với category space_interior."""
+    graph = build_graph(mcp=mock_mcp, skills=skills)
+    user_msg = "So sánh chi tiết về không gian và nội thất giữa các căn: lc_1, lc_2"
+
+    result = await run_once(graph, user_msg, thread_id="test_space")
+
+    assert result["intent"] == "US6_COMPARE"
+    action_types = [a["type"] for a in result["actions"]]
+    assert "compare" in action_types
+    compare_action = next(a for a in result["actions"] if a["type"] == "compare")
+    assert compare_action["category"] == "space_interior"
+
+
+@pytest.mark.asyncio
+async def test_compare_clarification_no_ids(skills, mock_mcp):
+    """Test Clarification Path: Người dùng yêu cầu so sánh nhưng không chọn căn nào -> hỏi lại."""
+    graph = build_graph(mcp=mock_mcp, skills=skills)
+    user_msg = "Tôi muốn so sánh các căn hộ"
+
+    result = await run_once(graph, user_msg, thread_id="test_clarify_no_ids")
+
+    assert result["intent"] == "US6_COMPARE"
+    assert len(result["tool_calls"]) == 0
+
+    action_types = [a["type"] for a in result["actions"]]
+    assert "clarify" in action_types
+
+    clarify_action = next(a for a in result["actions"] if a["type"] == "clarify")
+    assert "chọn từ 2 đến 4 căn" in clarify_action["prompt"]
+
+
+@pytest.mark.asyncio
+async def test_compare_clarification_single_id(skills, mock_mcp):
+    """Test Clarification Path: Chỉ chọn 1 căn -> không đủ điều kiện so sánh, yêu cầu chọn thêm."""
+    graph = build_graph(mcp=mock_mcp, skills=skills)
+    user_msg = "So sánh căn lc_1"
+
+    result = await run_once(graph, user_msg, thread_id="test_clarify_1_id")
+
+    assert result["intent"] == "US6_COMPARE"
+    assert len(result["tool_calls"]) == 0
+    assert result["actions"][0]["type"] == "clarify"
+
+
+@pytest.mark.asyncio
+async def test_compare_context_extraction_from_prior_search(skills, mock_mcp):
+    """Test Context Extraction: Người dùng nói 'so sánh 2 căn vừa tìm' khi có dữ liệu từ trước."""
+    # Giả lập state có sẵn kết quả tìm kiếm trước đó
+    state = {
+        "messages": [],
+        "normalized_input": "so sánh 2 căn vừa tìm",
+        "tool_results": [
+            {
+                "name": "search_listings",
+                "data": [
+                    {"id": "lc_1", "price_vnd": 2000000000},
+                    {"id": "lc_2", "price_vnd": 3500000000},
+                ],
+            }
+        ],
+    }
+
+    from agent.nodes.context import NodeContext
+    from agent.nodes.entities import extract_entities
+
+    ctx = NodeContext(skills=skills, mcp=mock_mcp, llm_model="test")
+    extracted = await extract_entities(state, ctx)
+
+    assert extracted["entities"].get("listing_ids") == ["lc_1", "lc_2"]
+
+
+@pytest.mark.asyncio
+async def test_compare_price_honesty_note(skills, mock_mcp):
+    """Test Guardrail & Honesty: Ghi chú rõ ràng về loại giá (asking vs estimate), không tư vấn chủ quan."""
+    graph = build_graph(mcp=mock_mcp, skills=skills)
+    user_msg = "So sánh căn lc_1 và lc_2"
+
+    result = await run_once(graph, user_msg, thread_id="test_honesty")
+
+    text = result["text"]
+    assert "đáng mua hơn" not in text
+    assert "nên mua" not in text
+
+
+def test_generate_comparison_summary_none_values():
+    """Kiểm tra _generate_comparison_summary không bị crash khi các trường dữ liệu là None."""
+    from agent.nodes.compose import _generate_comparison_summary
+
+    listings = [
+        {"id": "c1", "title": "Căn 1", "floor_num": None, "floor_band": None, "price_vnd": None, "area_m2": None},
+        {"id": "c2", "title": "Căn 2", "floor_num": 18, "floor_band": "Tầng cao", "price_vnd": 2000000000, "area_m2": 50},
+    ]
+
+    summary_space = _generate_comparison_summary(listings, "space_interior")
+    assert isinstance(summary_space, str)
+
+    summary_fin = _generate_comparison_summary(listings, "financial_legal")
+    assert isinstance(summary_fin, str)

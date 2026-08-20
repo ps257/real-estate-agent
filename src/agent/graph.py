@@ -22,8 +22,19 @@ from agent.nodes.entities import extract_entities
 from agent.nodes.intent import detect_intent
 from agent.nodes.normalize import normalize
 from agent.nodes.tools_node import call_tools
+from agent.intent_llm import FALLBACK_INTENT
 from agent.skills.loader import SkillRegistry
 from agent.state import AgentState
+
+
+def _route_after_normalize(state: AgentState) -> str:
+    """Conditional edge: guardrail chặn → compose (từ chối); hợp lệ → intent."""
+    return "compose" if state.get("guardrail") else "intent"
+
+
+def _route_after_intent(state: AgentState) -> str:
+    """Intent không xác định → hỏi lại, tuyệt đối không gọi entities/MCP."""
+    return "compose" if state.get("intent") == FALLBACK_INTENT else "entities"
 
 
 def _route_after_conversation(state: AgentState) -> str:
@@ -35,14 +46,29 @@ def build_graph(
     skills: SkillRegistry,
     mcp: MCPProtocol,
     *,
-    llm_model: str = "claude-haiku-4-5-20251001",
+    llm_model: str = "gpt-5.6",
+    guardrail_llm=None,
+    intent_llm=None,
+    entities_llm=None,
+    compose_llm=None,
     checkpointer=None,
 ):
     """Trả về graph đã compile. Bind NodeContext vào từng node qua partial.
 
-    checkpointer=None → MemorySaver (đổi sang RedisSaver để theo PRD).
+    checkpointer=None  → MemorySaver (đổi sang RedisSaver để theo PRD).
+    guardrail_llm=None → chỉ chạy guardrail tầng regex.
+    intent_llm=None    → chỉ chạy rule nhanh; câu còn lại dừng ở UNKNOWN.
+    entities_llm=None  → entities luôn rỗng, conversation sẽ hỏi lại.
     """
-    ctx = NodeContext(skills=skills, mcp=mcp, llm_model=llm_model)
+    ctx = NodeContext(
+        skills=skills,
+        mcp=mcp,
+        llm_model=llm_model,
+        guardrail_llm=guardrail_llm,
+        intent_llm=intent_llm,
+        entities_llm=entities_llm,
+        compose_llm=compose_llm,
+    )
 
     g = StateGraph(AgentState)
     g.add_node("normalize", partial(normalize, ctx=ctx))
@@ -53,8 +79,16 @@ def build_graph(
     g.add_node("compose", partial(compose, ctx=ctx))
 
     g.add_edge(START, "normalize")
-    g.add_edge("normalize", "intent")
-    g.add_edge("intent", "entities")
+    g.add_conditional_edges(
+        "normalize",
+        _route_after_normalize,
+        {"intent": "intent", "compose": "compose"},
+    )
+    g.add_conditional_edges(
+        "intent",
+        _route_after_intent,
+        {"entities": "entities", "compose": "compose"},
+    )
     g.add_edge("entities", "conversation")
     g.add_conditional_edges(
         "conversation",
@@ -70,8 +104,20 @@ def build_graph(
 def build_default_graph():
     """Graph dùng MCP thật + skill catalog từ config. [DONE]"""
     from agent.config import get_settings
+    from agent.entities_llm import build_entity_extractor
+    from agent.guardrail_llm import build_guardrail_llm
+    from agent.intent_llm import build_intent_classifier
+    from agent.compose_llm import build_compose_llm
 
     settings = get_settings()
     skills = SkillRegistry.load(settings.skills_dir)
     mcp = MCPClient(settings.mcp)
-    return build_graph(skills, mcp, llm_model=settings.llm_model)
+    return build_graph(
+        skills,
+        mcp,
+        llm_model=settings.llm_model,
+        guardrail_llm=build_guardrail_llm(settings),
+        intent_llm=build_intent_classifier(settings),
+        entities_llm=build_entity_extractor(settings),
+        compose_llm=build_compose_llm(settings),
+    )
