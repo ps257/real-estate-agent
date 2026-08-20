@@ -217,7 +217,7 @@ async def _us5_map(run: _ToolRun, slots: dict, state: AgentState) -> dict | None
         "listing_ids": listing_ids,
         "limit": 200,
         "include_amenities": bool(
-            slots.get("include_amenities", slots.get("wants_amenities", True))
+            slots.get("include_amenities") or slots.get("wants_amenities") or False
         ),
     }
     args.update({k: slots[k] for k in _MAP_FILTERS if slots.get(k) is not None})
