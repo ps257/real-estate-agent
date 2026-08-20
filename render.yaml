@@ -16,9 +16,11 @@ services:
     dockerfilePath: ./Dockerfile
     plan: free
     region: singapore
-    # KHÔNG đặt healthCheckPath: endpoint duy nhất là /mcp và nó trả 401 khi
-    # thiếu token -> Render sẽ coi là fail. Để trống thì Render chỉ kiểm tra
-    # tiến trình có mở port hay không.
+    # /healthz, không phải /mcp: /mcp trả 401 khi thiếu token nên Render sẽ
+    # đọc là fail. Probe này cũng là thứ giữ service không ngủ — thiếu nó, tool
+    # call đầu tiên của agent rơi vào cold start (~24s đo thực tế) và trả 500
+    # thay vì chờ.
+    healthCheckPath: /healthz
     envVars:
       - key: PORT            # Dockerfile bind MCP_PORT=8000; cho Render biết
         value: 8000
@@ -45,9 +47,10 @@ services:
     plan: free
     region: singapore
     healthCheckPath: /health
-    # Free tier chỉ 1 instance — bắt buộc, vì state hội thoại đang nằm trong RAM
-    # (MemorySaver ở src/agent/graph.py). Nhiều instance = hội thoại đứt quãng.
-    numInstances: 1
+    # KHÔNG khai numInstances: gói free vốn chỉ chạy 1 instance và khoá tuỳ chọn
+    # scaling, khai vào có thể bị từ chối lúc apply. Khi nâng lên gói trả phí,
+    # vẫn phải giữ 1 instance cho tới khi state hội thoại rời khỏi RAM —
+    # MemorySaver ở src/agent/graph.py không chia sẻ được giữa các instance.
     envVars:
       - key: PORT            # Dockerfile hardcode uvicorn --port 8000
         value: 8000
