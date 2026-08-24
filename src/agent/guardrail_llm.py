@@ -192,11 +192,7 @@ class LLMGuardrail:
                 **get_telemetry().openai_trace_kwargs("llm.guardrail"),
             )
         except Exception as exc:  # noqa: BLE001 — fail-open là chủ ý, xem docstring.
-<<<<<<< Updated upstream
             logger.warning("guardrail LLM lỗi, dùng fallback an toàn: %s: %s", type(exc).__name__, exc)
-=======
-            logger.warning("guardrail LLM lỗi, cho qua: %s", type(exc).__name__)
->>>>>>> Stashed changes
             return None
 
         # Model từ chối vì lý do an toàn -> output_parsed là None.

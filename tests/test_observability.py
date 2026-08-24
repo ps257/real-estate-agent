@@ -10,7 +10,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from agent.config import Settings, _parse_secret
-from agent.events import OutputTextDelta, ResponseCreated, ResponseDone
+from agent.events import OutputTextDelta, ProgressEvent, ResponseCreated, ResponseDone
 from agent.runner import run_once, run_stream
 from agent.server.app import ChatRequest, FeedbackRequest
 from agent.telemetry import Telemetry, mask_otel_spans, redact
@@ -74,6 +74,7 @@ def test_redaction_masks_nested_booking_fields_and_international_phone():
 
 
 def test_otel_json_string_is_structurally_redacted():
+    pytest.importorskip("langfuse")
     from langfuse.types import (
         MaskOtelSpansParams,
         OtelSpanData,
@@ -227,6 +228,7 @@ class _FakeLangfuseClient:
 
 @pytest.mark.asyncio
 async def test_root_trace_has_safe_dimensions_and_cot_free_output(monkeypatch):
+    pytest.importorskip("langfuse")
     telemetry = Telemetry(_settings())
     telemetry.client = _FakeLangfuseClient()
     telemetry.enabled = True
@@ -356,8 +358,13 @@ async def test_stream_marks_success_only_after_done_is_consumed(monkeypatch):
     stream = run_stream(_FakeGraph(), "hello", "thread")
 
     assert isinstance(await stream.__anext__(), ResponseCreated)
-    assert isinstance(await stream.__anext__(), OutputTextDelta)
+    event = await stream.__anext__()
+    while isinstance(event, ProgressEvent):
+        event = await stream.__anext__()
+    assert isinstance(event, OutputTextDelta)
     done = await stream.__anext__()
+    while not isinstance(done, ResponseDone):
+        done = await stream.__anext__()
     assert isinstance(done, ResponseDone)
     assert fake.turns[0].finished == 0
     with pytest.raises(StopAsyncIteration):

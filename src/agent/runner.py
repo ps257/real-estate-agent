@@ -11,14 +11,10 @@ hoặc MCP đang xử lý lâu.
 
 from __future__ import annotations
 
-import uuid
-<<<<<<< Updated upstream
-import time
-from typing import Any, AsyncIterator
-=======
 from collections.abc import AsyncIterator
+import time
 from typing import Any
->>>>>>> Stashed changes
+import uuid
 
 from agent.events import (
     ActionEvent,
@@ -109,73 +105,6 @@ async def run_stream(
     transport: str = "native",
 ) -> AsyncIterator[Event]:
     """Chạy graph, yield chuỗi Event mô phỏng OpenAI Realtime server events."""
-<<<<<<< Updated upstream
-    response_id = f"resp_{uuid.uuid4().hex[:12]}"
-    started = time.perf_counter()
-    def elapsed() -> int:
-        return round((time.perf_counter() - started) * 1000)
-    yield ResponseCreated(response_id=response_id, thread_id=thread_id)
-    yield ProgressEvent(
-        stage="request", status="active", message="Đang tiếp nhận yêu cầu…", elapsed_ms=elapsed()
-    )
-
-    config = {"configurable": {"thread_id": thread_id}}
-    state: dict[str, Any] = {}
-    progress_messages = {
-        "normalize": "Đã kiểm tra phạm vi yêu cầu",
-        "intent": "Đã xác định nhu cầu của bạn",
-        "entities": "Đã đọc dự án và các tiêu chí cần phân tích",
-        "conversation": "Đã chuẩn bị dữ liệu truy vấn",
-        "tools": "Đã nhận số liệu mới nhất từ hệ thống",
-        "compose": "Đã hoàn thiện câu trả lời",
-    }
-    active_messages = {
-        "intent": "Đang xác định nhu cầu của bạn…",
-        "entities": "Đang đọc dự án và các tiêu chí…",
-        "conversation": "Đang chuẩn bị dữ liệu truy vấn…",
-        "tools": "Đang lấy số liệu mới nhất từ hệ thống…",
-        "compose": "Đang tổng hợp câu trả lời…",
-    }
-
-    # Stream update ngay khi từng node hoàn tất, thay vì ainvoke xong toàn graph rồi
-    # mới replay event. UI nhờ đó thấy tiến độ thật trong lúc LLM/MCP đang chạy.
-    async for update in graph.astream(
-        new_state(message, thread_id, intent_override=intent_override),
-        config=config,
-        stream_mode="updates",
-    ):
-        if not isinstance(update, dict):
-            continue
-        for node_name, node_update in update.items():
-            if isinstance(node_update, dict):
-                state.update(node_update)
-            progress_message = progress_messages.get(node_name)
-            if progress_message:
-                yield ProgressEvent(
-                    stage=node_name,
-                    message=progress_message,
-                    elapsed_ms=elapsed(),
-                )
-                if node_name == "normalize":
-                    next_node = "compose" if state.get("guardrail") else "intent"
-                elif node_name == "intent":
-                    next_node = "entities"
-                elif node_name == "entities":
-                    next_node = "conversation"
-                elif node_name == "conversation":
-                    next_node = "compose" if state.get("needs_clarification") else "tools"
-                elif node_name == "tools":
-                    next_node = "compose"
-                else:
-                    next_node = None
-                if next_node and active_messages.get(next_node):
-                    yield ProgressEvent(
-                        stage=next_node,
-                        status="active",
-                        message=active_messages[next_node],
-                        elapsed_ms=elapsed(),
-                    )
-=======
     telemetry = get_telemetry()
     async with telemetry.chat_trace(
         message=message,
@@ -186,6 +115,11 @@ async def run_stream(
         intent_override=intent_override,
     ) as turn:
         response_id = f"resp_{uuid.uuid4().hex[:12]}"
+        started = time.perf_counter()
+
+        def elapsed() -> int:
+            return round((time.perf_counter() - started) * 1000)
+
         yield ResponseCreated(
             response_id=response_id,
             thread_id=thread_id,
@@ -193,12 +127,71 @@ async def run_stream(
             trace_id=turn.trace_id,
             feedback_token=turn.feedback_token,
         )
+        yield ProgressEvent(
+            stage="request", status="active", message="Đang tiếp nhận yêu cầu…", elapsed_ms=elapsed()
+        )
 
         config = {"configurable": {"thread_id": thread_id}}
-        state = await graph.ainvoke(
-            new_state(message, thread_id, intent_override=intent_override), config=config
-        )
->>>>>>> Stashed changes
+        state: dict[str, Any] = {}
+        progress_messages = {
+            "normalize": "Đã kiểm tra phạm vi yêu cầu",
+            "intent": "Đã xác định nhu cầu của bạn",
+            "entities": "Đã đọc dự án và các tiêu chí cần phân tích",
+            "conversation": "Đã chuẩn bị dữ liệu truy vấn",
+            "tools": "Đã nhận số liệu mới nhất từ hệ thống",
+            "compose": "Đã hoàn thiện câu trả lời",
+        }
+        active_messages = {
+            "intent": "Đang xác định nhu cầu của bạn…",
+            "entities": "Đang đọc dự án và các tiêu chí…",
+            "conversation": "Đang chuẩn bị dữ liệu truy vấn…",
+            "tools": "Đang lấy số liệu mới nhất từ hệ thống…",
+            "compose": "Đang tổng hợp câu trả lời…",
+        }
+
+        # Stream update ngay khi từng node hoàn tất, thay vì ainvoke xong toàn graph rồi
+        # mới replay event. UI nhờ đó thấy tiến độ thật trong lúc LLM/MCP đang chạy.
+        if hasattr(graph, "astream"):
+            async for update in graph.astream(
+                new_state(message, thread_id, intent_override=intent_override),
+                config=config,
+                stream_mode="updates",
+            ):
+                if not isinstance(update, dict):
+                    continue
+                for node_name, node_update in update.items():
+                    if isinstance(node_update, dict):
+                        state.update(node_update)
+                    progress_message = progress_messages.get(node_name)
+                    if progress_message:
+                        yield ProgressEvent(
+                            stage=node_name,
+                            message=progress_message,
+                            elapsed_ms=elapsed(),
+                        )
+                        if node_name == "normalize":
+                            next_node = "compose" if state.get("guardrail") else "intent"
+                        elif node_name == "intent":
+                            next_node = "entities"
+                        elif node_name == "entities":
+                            next_node = "conversation"
+                        elif node_name == "conversation":
+                            next_node = "compose" if state.get("needs_clarification") else "tools"
+                        elif node_name == "tools":
+                            next_node = "compose"
+                        else:
+                            next_node = None
+                        if next_node and active_messages.get(next_node):
+                            yield ProgressEvent(
+                                stage=next_node,
+                                status="active",
+                                message=active_messages[next_node],
+                                elapsed_ms=elapsed(),
+                            )
+        else:
+            state = await graph.ainvoke(
+                new_state(message, thread_id, intent_override=intent_override), config=config
+            )
 
         # 1) Chain-of-thought is only returned under the explicit debug switch.  It is
         # intentionally never passed to telemetry.

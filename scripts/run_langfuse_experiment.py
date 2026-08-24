@@ -16,8 +16,20 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from langfuse import Evaluation
-from langfuse.api.core import ApiError
+try:
+    from langfuse import Evaluation
+    from langfuse.api.core import ApiError
+except ImportError:
+    from dataclasses import dataclass
+
+    @dataclass
+    class Evaluation:  # type: ignore[no-redef]
+        name: str
+        value: float
+        comment: str | None = None
+
+    class ApiError(Exception):  # type: ignore[no-redef]
+        pass
 
 from agent.telemetry import get_telemetry, redact
 
