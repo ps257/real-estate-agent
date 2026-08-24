@@ -26,6 +26,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from agent.config import Settings, get_settings
+from agent.telemetry import get_async_openai_class, get_telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +134,7 @@ class LLMGuardrail:
     def _ensure(self):
         if self._client is None:
             # Import trong hàm: môi trường không cài extra [llm] vẫn import được module.
-            from openai import AsyncOpenAI
+            AsyncOpenAI = get_async_openai_class()
 
             self._client = AsyncOpenAI(
                 api_key=self._settings.openai_api_key,
@@ -188,9 +189,14 @@ class LLMGuardrail:
                 # Model dòng gpt-5.x là reasoning model. Nếu latency chưa đạt,
                 # chỗ này là nút vặn đầu tiên (tham số `reasoning`) — kiểm tra
                 # giá trị hợp lệ trong docs trước khi bật, sai là 400.
+                **get_telemetry().openai_trace_kwargs("llm.guardrail"),
             )
         except Exception as exc:  # noqa: BLE001 — fail-open là chủ ý, xem docstring.
+<<<<<<< Updated upstream
             logger.warning("guardrail LLM lỗi, dùng fallback an toàn: %s: %s", type(exc).__name__, exc)
+=======
+            logger.warning("guardrail LLM lỗi, cho qua: %s", type(exc).__name__)
+>>>>>>> Stashed changes
             return None
 
         # Model từ chối vì lý do an toàn -> output_parsed là None.

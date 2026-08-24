@@ -20,7 +20,9 @@ from __future__ import annotations
 
 import time
 import uuid
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from contextlib import aclosing
+from typing import Any
 
 from agent.events import (
     ActionEvent,
@@ -28,6 +30,7 @@ from agent.events import (
     MCPToolCallCompleted,
     OutputTextDelta,
     ReasoningDelta,
+    ResponseCreated,
     ResponseDone,
 )
 from agent.runner import run_stream
@@ -61,6 +64,9 @@ def to_chat_completion(payload: dict[str, Any], model: str) -> dict[str, Any]:
         "intent": payload.get("intent"),
         "tool_calls": payload.get("tool_calls", []),
         "actions": payload.get("actions", []),
+        "message_id": payload.get("message_id"),
+        "trace_id": payload.get("trace_id"),
+        "feedback_token": payload.get("feedback_token"),
     }
     if "reasoning" in payload:
         agent_data["reasoning"] = payload["reasoning"]
@@ -104,6 +110,8 @@ async def stream_chat_completion_chunks(
     model: str,
     *,
     include_reasoning: bool = False,
+    request_message_id: str | None = None,
+    user_id: str | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Chạy graph, yield dict `chat.completion.chunk` (chưa serialize SSE).
 
@@ -116,30 +124,64 @@ async def stream_chat_completion_chunks(
     """
     cid = _completion_id()
 
-    # Chunk mở màn: role assistant (chuẩn OpenAI: chunk đầu set role).
-    yield _chunk(cid, model, {"role": "assistant", "content": ""})
-
-    async for ev in run_stream(
-        graph, message, thread_id, include_reasoning=include_reasoning
-    ):
-        if isinstance(ev, ReasoningDelta):
-            yield _chunk(cid, model, {
-                "reasoning_content": ev.delta,
-                "agent": {"type": "reasoning", "delta": ev.delta},
-            })
-        elif isinstance(ev, MCPToolCallArguments):
-            yield _chunk(cid, model, {
-                "agent": {"type": "mcp_tool_call.arguments",
-                          "name": ev.name, "arguments": ev.arguments},
-            })
-        elif isinstance(ev, MCPToolCallCompleted):
-            yield _chunk(cid, model, {
-                "agent": {"type": "mcp_tool_call.completed",
-                          "name": ev.name, "result": ev.result},
-            })
-        elif isinstance(ev, OutputTextDelta):
-            yield _chunk(cid, model, {"content": ev.delta})
-        elif isinstance(ev, ActionEvent):
-            yield _chunk(cid, model, {"agent": {"type": "action", "action": ev.action}})
-        elif isinstance(ev, ResponseDone):
-            yield _chunk(cid, model, {}, finish_reason="stop")
+    async with aclosing(
+        run_stream(
+            graph,
+            message,
+            thread_id,
+            include_reasoning=include_reasoning,
+            request_message_id=request_message_id,
+            user_id=user_id,
+            transport="openai",
+        )
+    ) as events:
+        async for ev in events:
+            if isinstance(ev, ResponseCreated):
+                # Chunk mở màn: role assistant plus safe correlation metadata.
+                yield _chunk(
+                    cid,
+                    model,
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "agent": {
+                            "type": "response.created",
+                            "message_id": ev.message_id,
+                            "trace_id": ev.trace_id,
+                            "feedback_token": ev.feedback_token,
+                        },
+                    },
+                )
+            elif isinstance(ev, ReasoningDelta):
+                yield _chunk(cid, model, {
+                    "reasoning_content": ev.delta,
+                    "agent": {"type": "reasoning", "delta": ev.delta},
+                })
+            elif isinstance(ev, MCPToolCallArguments):
+                yield _chunk(cid, model, {
+                    "agent": {"type": "mcp_tool_call.arguments",
+                              "name": ev.name, "arguments": ev.arguments},
+                })
+            elif isinstance(ev, MCPToolCallCompleted):
+                yield _chunk(cid, model, {
+                    "agent": {"type": "mcp_tool_call.completed",
+                              "name": ev.name, "result": ev.result},
+                })
+            elif isinstance(ev, OutputTextDelta):
+                yield _chunk(cid, model, {"content": ev.delta})
+            elif isinstance(ev, ActionEvent):
+                yield _chunk(cid, model, {"agent": {"type": "action", "action": ev.action}})
+            elif isinstance(ev, ResponseDone):
+                yield _chunk(
+                    cid,
+                    model,
+                    {
+                        "agent": {
+                            "type": "response.done",
+                            "message_id": ev.message_id,
+                            "trace_id": ev.trace_id,
+                            "feedback_token": ev.feedback_token,
+                        }
+                    },
+                    finish_reason="stop",
+                )

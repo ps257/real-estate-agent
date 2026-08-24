@@ -31,6 +31,9 @@ class ResponseCreated(Event):
     type: str = "response.created"
     response_id: str
     thread_id: str
+    message_id: str | None = None
+    trace_id: str | None = None
+    feedback_token: str | None = None
 
 
 class ReasoningDelta(Event):
@@ -85,3 +88,6 @@ class ResponseDone(Event):
 
     type: str = "response.done"
     response: dict[str, Any]
+    message_id: str | None = None
+    trace_id: str | None = None
+    feedback_token: str | None = None

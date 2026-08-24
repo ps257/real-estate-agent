@@ -12,16 +12,17 @@ from __future__ import annotations
 try:
     import truststore
     truststore.inject_into_ssl()
-except Exception:
+except Exception:  # noqa: BLE001, S110 - truststore is an optional compatibility shim
     pass
 
 import json
 import secrets
-from typing import Any
+from contextlib import aclosing, asynccontextmanager
+from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sse_starlette.sse import EventSourceResponse
 from starlette.responses import JSONResponse
 
@@ -32,8 +33,21 @@ from agent.openai_compat import (
     to_chat_completion,
 )
 from agent.runner import run_once, run_stream
+from agent.telemetry import get_telemetry
 
 _settings = get_settings()
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    # Initialize once at process startup so SDK setup is never charged to the
+    # first chat request. Missing credentials still produce the no-op singleton.
+    telemetry = get_telemetry()
+    try:
+        yield
+    finally:
+        # Flush buffered spans/scores during graceful shutdown. This is fail-open.
+        telemetry.shutdown()
 
 
 class UTF8JSONResponse(JSONResponse):
@@ -45,6 +59,7 @@ class UTF8JSONResponse(JSONResponse):
 app = FastAPI(
     title="Real Estate Market Intelligence Agent",
     default_response_class=UTF8JSONResponse,
+    lifespan=lifespan,
 )
 
 # CORS — cho frontend (domain khác) gọi được. Cấu hình qua CORS_ALLOW_ORIGINS.
@@ -89,9 +104,26 @@ def _get_graph():
 # ---------------------------------------------------------------- Native API
 
 class ChatRequest(BaseModel):
-    message: str
-    thread_id: str = "default"
+    message: str = Field(min_length=1, max_length=20_000)
+    thread_id: str = Field(default="default", min_length=1, max_length=256)
     intent: str | None = None
+    request_message_id: str | None = Field(default=None, min_length=1, max_length=256)
+    user_id: str | None = Field(default=None, min_length=1, max_length=256)
+
+
+class FeedbackRequest(BaseModel):
+    trace_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    message_id: str = Field(pattern=r"^msg_[a-f0-9]{32}$")
+    feedback_token: str = Field(min_length=32, max_length=4096)
+    value: Literal[0, 1]
+    comment: str | None = Field(default=None, max_length=500)
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def validate_binary_value(cls, value: Any) -> int:
+        if type(value) is not int or value not in (0, 1):
+            raise ValueError("value must be the integer 0 or 1")
+        return value
 
 
 @app.post("/chat")
@@ -103,6 +135,9 @@ async def chat(req: ChatRequest, _: None = Depends(require_api_key)) -> dict:
         req.thread_id,
         intent_override=req.intent,
         include_reasoning=_settings.expose_reasoning,
+        request_message_id=req.request_message_id,
+        user_id=req.user_id,
+        transport="native",
     )
 
 
@@ -113,15 +148,23 @@ async def chat_stream(
     """Stream: SSE mô phỏng OpenAI Realtime server events (kèm chain-of-thought)."""
 
     async def gen():
-        async for event in run_stream(
+        stream = run_stream(
             _get_graph(),
             req.message,
             req.thread_id,
             intent_override=req.intent,
             include_reasoning=_settings.expose_reasoning,
-        ):
-            # sse-starlette tự bọc `event:`/`data:`; ta cung cấp cả 2 field.
-            yield {"event": event.type, "data": event.model_dump_json(exclude_none=True)}
+            request_message_id=req.request_message_id,
+            user_id=req.user_id,
+            transport="native",
+        )
+        async with aclosing(stream):
+            async for event in stream:
+                # sse-starlette tự bọc `event:`/`data:`; ta cung cấp cả 2 field.
+                yield {
+                    "event": event.type,
+                    "data": event.model_dump_json(exclude_none=True),
+                }
 
     return EventSourceResponse(gen())
 
@@ -168,22 +211,60 @@ async def openai_chat_completions(
             message,
             thread_id,
             include_reasoning=_settings.expose_reasoning,
+            user_id=req.user,
+            transport="openai",
         )
         return to_chat_completion(payload, req.model)
 
     async def gen():
-        async for chunk in stream_chat_completion_chunks(
+        stream = stream_chat_completion_chunks(
             graph,
             message,
             thread_id,
             req.model,
             include_reasoning=_settings.expose_reasoning,
-        ):
-            # OpenAI stream framing: mỗi chunk là `data: <json>`, kết thúc bằng `data: [DONE]`.
-            yield {"data": json.dumps(chunk, ensure_ascii=False)}
+            user_id=req.user,
+        )
+        async with aclosing(stream):
+            async for chunk in stream:
+                # OpenAI stream framing: mỗi chunk là `data: <json>`, kết thúc bằng `data: [DONE]`.
+                yield {"data": json.dumps(chunk, ensure_ascii=False)}
         yield {"data": "[DONE]"}
 
     return EventSourceResponse(gen())
+
+
+@app.post("/api/feedback")
+async def feedback(
+    req: FeedbackRequest, _: None = Depends(require_api_key)
+) -> dict[str, Any]:
+    """Attach idempotent BOOLEAN user feedback to an owned Langfuse trace."""
+
+    telemetry = get_telemetry()
+    claims = telemetry.verify_feedback_token(req.feedback_token)
+    if (
+        claims is None
+        or claims.get("trace_id") != req.trace_id
+        or claims.get("message_id") != req.message_id
+    ):
+        raise HTTPException(status_code=403, detail="Invalid feedback ownership token")
+    accepted = telemetry.submit_feedback(
+        trace_id=req.trace_id,
+        message_id=req.message_id,
+        feedback_token=req.feedback_token,
+        value=bool(req.value),
+        comment=req.comment,
+    )
+    if not accepted:
+        raise HTTPException(
+            status_code=503,
+            detail="Feedback service temporarily unavailable",
+        )
+    return {
+        "status": "accepted",
+        "trace_id": req.trace_id,
+        "message_id": req.message_id,
+    }
 
 
 # ---------------------------------------------------------------- Misc

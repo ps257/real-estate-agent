@@ -16,6 +16,7 @@ import json
 from typing import Any, Protocol, runtime_checkable
 
 from agent.config import MCPConfig, get_settings
+from agent.telemetry import current_w3c_carrier, get_telemetry, redact
 
 
 def parse_tool_result(raw: Any) -> Any:
@@ -125,4 +126,104 @@ class MCPClient:
         await self._ensure()
         if name not in self._tools:
             raise KeyError(f"MCP tool khong ton tai: {name!r}. Co: {list(self._tools)}")
-        return parse_tool_result(await self._tools[name].ainvoke(args))
+
+        telemetry = get_telemetry()
+        with telemetry.observation(
+            name=f"mcp.{name}",
+            as_type="tool",
+            input=redact(args),
+            metadata={"transport": self._config.transport, "tool_name": name},
+        ) as observation:
+            argument_valid = _arguments_match_schema(self._tools[name], args)
+            observation.score("argument_validity", argument_valid)
+
+            # The LangChain BaseTool wrapper does not expose MCP request `_meta`.
+            # Use the same adapter session factory one level lower so W3C context is
+            # carried in CallToolRequest.params._meta.  A fresh initialized session per
+            # invocation matches MultiServerMCPClient's existing lifecycle.
+            from langchain_mcp_adapters.sessions import create_session
+
+            result: Any = None
+            captured_exception: Exception | None = None
+            try:
+                async with create_session(self._config.server_spec()) as session:
+                    await session.initialize()
+                    result = await session.call_tool(
+                        name,
+                        args,
+                        meta=current_w3c_carrier() or None,
+                    )
+            except Exception as exc:  # noqa: BLE001 - mirrors adapter transport handling
+                captured_exception = exc
+
+            # Re-raise outside the adapter context.  Some MCP transports suppress an
+            # exception while disconnecting; MultiServerMCPClient uses the same guard.
+            if captured_exception is not None:
+                observation.score("tool_success", False)
+                observation.update(
+                    output={"status": "transport_error"},
+                    level="ERROR",
+                    status_message=type(captured_exception).__name__,
+                )
+                raise captured_exception
+
+            is_error = bool(getattr(result, "isError", False))
+            parsed = parse_tool_result(result)
+            observation.score("tool_success", not is_error)
+            observation.update(
+                output=_tool_result_summary(parsed, is_error=is_error),
+                level="WARNING" if is_error else None,
+                status_message="mcp_error" if is_error else None,
+            )
+            return parsed
+
+
+def _arguments_match_schema(tool: Any, args: Any) -> bool:
+    """Best-effort JSON Schema check used only for telemetry scoring.
+
+    The MCP server remains the source of truth and still receives invalid arguments,
+    preserving the previous adapter/server validation and error semantics.
+    """
+
+    if not isinstance(args, dict):
+        return False
+    schema = getattr(tool, "args_schema", None)
+    try:
+        if isinstance(schema, type) and hasattr(schema, "model_validate"):
+            schema.model_validate(args)
+            return True
+        if isinstance(schema, type) and hasattr(schema, "parse_obj"):
+            schema.parse_obj(args)
+            return True
+        if schema is None and hasattr(tool, "get_input_schema"):
+            model = tool.get_input_schema()
+            if hasattr(model, "model_validate"):
+                model.model_validate(args)
+                return True
+        if not isinstance(schema, dict):
+            return True
+
+        from jsonschema.validators import validator_for
+
+        validator = validator_for(schema)
+        validator.check_schema(schema)
+        validator(schema).validate(args)
+        return True
+    except Exception:  # noqa: BLE001 - third-party schemas are best-effort scoring only
+        return False
+
+
+def _tool_result_summary(result: Any, *, is_error: bool) -> dict[str, Any]:
+    """Summarize tool output without copying domain data into telemetry."""
+
+    summary: dict[str, Any] = {
+        "status": "error" if is_error else "ok",
+        "result_type": type(result).__name__,
+    }
+    if isinstance(result, dict):
+        summary["keys"] = sorted(str(key) for key in result)[:50]
+    elif isinstance(result, list):
+        summary["item_count"] = len(result)
+    elif isinstance(result, str):
+        summary["text_length"] = len(result)
+    return summary

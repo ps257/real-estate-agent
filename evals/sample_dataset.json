@@ -1,0 +1,47 @@
+[
+  {
+    "input": {
+      "message": "Tìm căn hộ ở Hà Nội",
+      "intent": "US1_SEARCH"
+    },
+    "expected_output": {
+      "intent": "US1_SEARCH",
+      "tool": "resolve_project",
+      "answer_terms": ["căn"],
+      "grounding_terms": ["dự án"]
+    },
+    "metadata": {
+      "case": "search-by-province"
+    }
+  },
+  {
+    "input": {
+      "message": "Tôi muốn xem bản đồ các căn hộ",
+      "intent": "US5_MAP"
+    },
+    "expected_output": {
+      "intent": "US5_MAP",
+      "tool": null,
+      "answer_terms": ["dự án"],
+      "grounding_terms": ["dự án"]
+    },
+    "metadata": {
+      "case": "map-clarification"
+    }
+  },
+  {
+    "input": {
+      "message": "So sánh giúp tôi các căn phù hợp",
+      "intent": "US6_COMPARE"
+    },
+    "expected_output": {
+      "intent": "US6_COMPARE",
+      "tool": null,
+      "answer_terms": ["so sánh"],
+      "grounding_terms": ["căn"]
+    },
+    "metadata": {
+      "case": "compare-clarification"
+    }
+  }
+]
