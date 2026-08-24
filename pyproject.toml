@@ -14,12 +14,14 @@ dependencies = [
     # mcp SDK: giữ ở 1.x vì langchain-mcp-adapters 0.3.x chưa hỗ trợ mcp 2.x.
     "mcp>=1.24,<2.0",
     "langsmith>=0.3.0",
+    "langfuse>=4.14.4,<5",
     "fastapi>=0.120,<1.0",
     "uvicorn>=0.38,<1.0",
     "sse-starlette>=2.4,<3.0",
     "pydantic>=2.11,<3.0",
     "pyyaml>=6.0",
     "python-dotenv>=1.0",
+    "jsonschema>=4.20,<5.0",
 ]
 
 [project.optional-dependencies]

@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 
 from agent.config import Settings, get_settings
+from agent.telemetry import get_async_openai_class, get_telemetry
 
 if TYPE_CHECKING:  # tránh import vòng khi chỉ cần type hint
     from agent.skills.loader import SkillRegistry
@@ -119,7 +120,7 @@ class IntentClassifier:
 
     def _ensure(self):
         if self._client is None:
-            from openai import AsyncOpenAI
+            AsyncOpenAI = get_async_openai_class()
 
             self._client = AsyncOpenAI(
                 api_key=self._settings.openai_api_key,
@@ -169,13 +170,13 @@ class IntentClassifier:
                 input=messages,
                 text_format=IntentVerdict,
                 max_output_tokens=256,
+                **get_telemetry().openai_trace_kwargs("llm.intent"),
             )
         except Exception as exc:  # noqa: BLE001 — fallback là chủ ý, xem docstring.
             logger.warning(
-                "intent LLM lỗi, fallback %s: %s: %s",
+                "intent LLM lỗi, fallback %s: %s",
                 FALLBACK_INTENT,
                 type(exc).__name__,
-                exc,
             )
             return None
 

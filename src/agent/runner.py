@@ -12,8 +12,13 @@ hoặc MCP đang xử lý lâu.
 from __future__ import annotations
 
 import uuid
+<<<<<<< Updated upstream
 import time
 from typing import Any, AsyncIterator
+=======
+from collections.abc import AsyncIterator
+from typing import Any
+>>>>>>> Stashed changes
 
 from agent.events import (
     ActionEvent,
@@ -27,10 +32,17 @@ from agent.events import (
     ResponseDone,
 )
 from agent.state import new_state
+from agent.telemetry import get_telemetry
 
 
 def _final_payload(
-    state: dict, thread_id: str, *, include_reasoning: bool = False
+    state: dict,
+    thread_id: str,
+    *,
+    include_reasoning: bool = False,
+    message_id: str | None = None,
+    trace_id: str | None = None,
+    feedback_token: str | None = None,
 ) -> dict[str, Any]:
     """Payload tổng hợp — dùng cho non-stream và cho response.done."""
     payload = {
@@ -39,6 +51,9 @@ def _final_payload(
         "text": state.get("response_text", ""),
         "tool_calls": state.get("tool_calls", []),
         "actions": state.get("actions", []),
+        "message_id": message_id,
+        "trace_id": trace_id,
+        "feedback_token": feedback_token,
     }
     if include_reasoning:
         payload["reasoning"] = state.get("cot", [])
@@ -46,18 +61,55 @@ def _final_payload(
 
 
 async def run_once(
-    graph, message: str, thread_id: str, *, intent_override: str | None = None, include_reasoning: bool = False
+    graph,
+    message: str,
+    thread_id: str,
+    *,
+    intent_override: str | None = None,
+    include_reasoning: bool = False,
+    request_message_id: str | None = None,
+    user_id: str | None = None,
+    transport: str = "native",
 ) -> dict[str, Any]:
     """Chạy graph, trả full JSON (non-stream)."""
-    config = {"configurable": {"thread_id": thread_id}}
-    result = await graph.ainvoke(new_state(message, thread_id, intent_override=intent_override), config=config)
-    return _final_payload(result, thread_id, include_reasoning=include_reasoning)
+    telemetry = get_telemetry()
+    async with telemetry.chat_trace(
+        message=message,
+        thread_id=thread_id,
+        user_id=user_id,
+        message_id=request_message_id,
+        transport=transport,
+        intent_override=intent_override,
+    ) as turn:
+        config = {"configurable": {"thread_id": thread_id}}
+        result = await graph.ainvoke(
+            new_state(message, thread_id, intent_override=intent_override), config=config
+        )
+        payload = _final_payload(
+            result,
+            thread_id,
+            include_reasoning=include_reasoning,
+            message_id=turn.message_id,
+            trace_id=turn.trace_id,
+            feedback_token=turn.feedback_token,
+        )
+        turn.finish(payload)
+        return payload
 
 
 async def run_stream(
-    graph, message: str, thread_id: str, *, intent_override: str | None = None, include_reasoning: bool = False
+    graph,
+    message: str,
+    thread_id: str,
+    *,
+    intent_override: str | None = None,
+    include_reasoning: bool = False,
+    request_message_id: str | None = None,
+    user_id: str | None = None,
+    transport: str = "native",
 ) -> AsyncIterator[Event]:
     """Chạy graph, yield chuỗi Event mô phỏng OpenAI Realtime server events."""
+<<<<<<< Updated upstream
     response_id = f"resp_{uuid.uuid4().hex[:12]}"
     started = time.perf_counter()
     def elapsed() -> int:
@@ -123,32 +175,72 @@ async def run_stream(
                         message=active_messages[next_node],
                         elapsed_ms=elapsed(),
                     )
+=======
+    telemetry = get_telemetry()
+    async with telemetry.chat_trace(
+        message=message,
+        thread_id=thread_id,
+        user_id=user_id,
+        message_id=request_message_id,
+        transport=transport,
+        intent_override=intent_override,
+    ) as turn:
+        response_id = f"resp_{uuid.uuid4().hex[:12]}"
+        yield ResponseCreated(
+            response_id=response_id,
+            thread_id=thread_id,
+            message_id=turn.message_id,
+            trace_id=turn.trace_id,
+            feedback_token=turn.feedback_token,
+        )
 
-    # 1) Chain-of-thought.
-    if include_reasoning:
-        for step in state.get("cot", []):
-            yield ReasoningDelta(delta=step)
+        config = {"configurable": {"thread_id": thread_id}}
+        state = await graph.ainvoke(
+            new_state(message, thread_id, intent_override=intent_override), config=config
+        )
+>>>>>>> Stashed changes
 
-    # 2) MCP tool calls (arguments trước, completed sau — ghép theo thứ tự).
-    calls = state.get("tool_calls", [])
-    results = state.get("tool_results", [])
-    for i, call in enumerate(calls):
-        yield MCPToolCallArguments(name=call["name"], arguments=call.get("args", {}))
-        res = results[i]["result"] if i < len(results) else None
-        yield MCPToolCallCompleted(name=call["name"], result=res)
+        # 1) Chain-of-thought is only returned under the explicit debug switch.  It is
+        # intentionally never passed to telemetry.
+        if include_reasoning:
+            for step in state.get("cot", []):
+                yield ReasoningDelta(delta=step)
 
-    # 3) Text trả lời — chunk theo từ để mô phỏng streaming token.
-    for chunk in _chunk_text(state.get("response_text", "")):
-        yield OutputTextDelta(delta=chunk)
+        # 2) MCP tool calls (arguments trước, completed sau — ghép theo thứ tự).
+        calls = state.get("tool_calls", [])
+        results = state.get("tool_results", [])
+        for i, call in enumerate(calls):
+            yield MCPToolCallArguments(name=call["name"], arguments=call.get("args", {}))
+            res = results[i]["result"] if i < len(results) else None
+            yield MCPToolCallCompleted(name=call["name"], result=res)
 
-    # 4) UI actions.
-    for action in state.get("actions", []):
-        yield ActionEvent(action=action)
+        # 3) Text trả lời — chunk theo từ để mô phỏng streaming token.
+        for chunk in _chunk_text(state.get("response_text", "")):
+            turn.mark_ttft()
+            yield OutputTextDelta(delta=chunk)
 
-    # 5) Done.
-    yield ResponseDone(
-        response=_final_payload(state, thread_id, include_reasoning=include_reasoning)
-    )
+        # 4) UI actions.
+        for action in state.get("actions", []):
+            yield ActionEvent(action=action)
+
+        # 5) Done.  Keep the root open while the event is handed to the transport.
+        # Success is recorded only after the consumer resumes the generator; a
+        # disconnect while sending the final event is therefore still cancellation.
+        payload = _final_payload(
+            state,
+            thread_id,
+            include_reasoning=include_reasoning,
+            message_id=turn.message_id,
+            trace_id=turn.trace_id,
+            feedback_token=turn.feedback_token,
+        )
+        yield ResponseDone(
+            response=payload,
+            message_id=turn.message_id,
+            trace_id=turn.trace_id,
+            feedback_token=turn.feedback_token,
+        )
+        turn.finish(payload)
 
 
 def _chunk_text(text: str, size: int = 6) -> list[str]:

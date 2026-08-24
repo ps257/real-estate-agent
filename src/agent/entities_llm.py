@@ -18,6 +18,7 @@ import logging
 from pydantic import BaseModel
 
 from agent.config import Settings, get_settings
+from agent.telemetry import get_async_openai_class, get_telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +137,7 @@ class EntityExtractor:
 
     def _ensure(self):
         if self._client is None:
-            from openai import AsyncOpenAI
+            AsyncOpenAI = get_async_openai_class()
 
             self._client = AsyncOpenAI(
                 api_key=self._settings.openai_api_key,
@@ -168,10 +169,11 @@ class EntityExtractor:
                 ],
                 text_format=ExtractedEntities,
                 max_output_tokens=512,  # nhiều field hơn intent
+                **get_telemetry().openai_trace_kwargs("llm.entities"),
             )
         except Exception as exc:  # noqa: BLE001 — trả rỗng là chủ ý, xem docstring.
             logger.warning(
-                "entities LLM lỗi, trả rỗng: %s: %s", type(exc).__name__, exc
+                "entities LLM lỗi, trả rỗng: %s", type(exc).__name__
             )
             return None
 

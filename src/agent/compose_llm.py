@@ -8,10 +8,9 @@ from __future__ import annotations
 
 import logging
 
-from pydantic import BaseModel
-
 from agent.config import Settings, get_settings
 from agent.state import AgentState
+from agent.telemetry import get_async_openai_class, get_telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +56,7 @@ class ComposeLLM:
 
     def _ensure(self):
         if self._client is None:
-            from openai import AsyncOpenAI
+            AsyncOpenAI = get_async_openai_class()
 
             self._client = AsyncOpenAI(
                 api_key=self._settings.openai_api_key,
@@ -134,14 +133,15 @@ class ComposeLLM:
                 temperature=0.7,
                 max_tokens=512,
                 timeout=self._settings.compose_llm_timeout,
+                **get_telemetry().openai_trace_kwargs("llm.compose"),
             )
             content = response.choices[0].message.content
             if content:
                 return content.strip()
             return fallback_text
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - provider failures use fallback text
             logger.warning(
-                "Compose LLM lỗi, dùng fallback_text: %s: %s", type(exc).__name__, exc
+                "Compose LLM lỗi, dùng fallback_text: %s", type(exc).__name__
             )
             return fallback_text
 
