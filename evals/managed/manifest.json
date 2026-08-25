@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "environment": "development",
+  "activation_blocked": "Langfuse Cloud public API regression on 2026-08-25 parses the fixed code-evaluator mapping as null during active-rule preflight.",
+  "evaluators": [
+    {
+      "name": "agent_output_present",
+      "source": "agent_output_present.py",
+      "rule": {
+        "name": "agent-output-present-development",
+        "target": "observation",
+        "enabled": false,
+        "sampling": 1.0,
+        "filters": [
+          {"type": "boolean", "column": "isRootObservation", "operator": "=", "value": true},
+          {"type": "stringOptions", "column": "name", "operator": "any of", "value": ["agent.chat"]},
+          {"type": "stringOptions", "column": "environment", "operator": "any of", "value": ["development"]},
+          {"type": "stringObject", "column": "metadata", "key": "service_name", "operator": "=", "value": "real-estate-agent"}
+        ]
+      }
+    },
+    {
+      "name": "response_schema_valid",
+      "source": "response_schema_valid.py",
+      "rule": {
+        "name": "response-schema-valid-development",
+        "target": "observation",
+        "enabled": false,
+        "sampling": 1.0,
+        "filters": [
+          {"type": "boolean", "column": "isRootObservation", "operator": "=", "value": true},
+          {"type": "stringOptions", "column": "name", "operator": "any of", "value": ["agent.chat"]},
+          {"type": "stringOptions", "column": "environment", "operator": "any of", "value": ["development"]},
+          {"type": "stringObject", "column": "metadata", "key": "service_name", "operator": "=", "value": "real-estate-agent"}
+        ]
+      }
+    },
+    {
+      "name": "tool_call_valid",
+      "source": "tool_call_valid.py",
+      "inject_tool_contracts": true,
+      "rule": {
+        "name": "tool-call-valid-development",
+        "target": "observation",
+        "enabled": false,
+        "sampling": 1.0,
+        "filters": [
+          {"type": "stringOptions", "column": "name", "operator": "any of", "value_from": "mcp_observation_names"},
+          {"type": "stringOptions", "column": "environment", "operator": "any of", "value": ["development"]},
+          {"type": "stringObject", "column": "metadata", "key": "service_name", "operator": "=", "value": "real-estate-agent"}
+        ]
+      }
+    },
+    {
+      "name": "tool_result_present",
+      "source": "tool_result_present.py",
+      "rule": {
+        "name": "tool-result-present-development",
+        "target": "observation",
+        "enabled": false,
+        "sampling": 1.0,
+        "filters": [
+          {"type": "stringOptions", "column": "name", "operator": "any of", "value_from": "mcp_observation_names"},
+          {"type": "stringOptions", "column": "environment", "operator": "any of", "value": ["development"]},
+          {"type": "stringObject", "column": "metadata", "key": "service_name", "operator": "=", "value": "real-estate-agent"}
+        ]
+      }
+    },
+    {
+      "name": "expected_tool_match",
+      "source": "expected_tool_match.py",
+      "rule": {
+        "name": "expected-tool-match-smoke-v1",
+        "target": "experiment",
+        "enabled": false,
+        "sampling": 1.0,
+        "filters": [
+          {"type": "stringOptions", "column": "datasetId", "operator": "any of", "value_from": "langfuse_dataset", "dataset_name": "real-estate-agent-smoke-v1"}
+        ]
+      }
+    }
+  ],
+  "deferred": [
+    {"name": "expected_answer_match", "reason": "The current sample dataset has no explicit deterministic match mode."},
+    {"name": "forbidden_content_absent", "reason": "No versioned forbidden-content policy is present in the repository."}
+  ]
+}
