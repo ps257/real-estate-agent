@@ -103,10 +103,10 @@ class MCPConfig:
 
     def server_spec(self) -> dict:
         """Trả về config dict cho MultiServerMCPClient theo transport đang chọn."""
-        if self.transport == "http":
+        if self.transport in ("http", "sse"):
             if not self.url:
-                raise ValueError("MCP_TRANSPORT=http nhưng thiếu MCP_SERVER_URL")
-            spec: dict = {"transport": "http", "url": self.url}
+                raise ValueError(f"MCP_TRANSPORT={self.transport} nhưng thiếu MCP_SERVER_URL")
+            spec: dict = {"transport": self.transport, "url": self.url}
             if self.headers:
                 spec["headers"] = self.headers
             return spec

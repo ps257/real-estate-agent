@@ -180,3 +180,90 @@ async def test_us6_dung_listing_ids(skills):
     assert out["needs_clarification"] is False
     assert out["slots"]["listing_ids"] == ["vhm:a", "vhm:b"]
     assert mcp.calls == []
+
+
+async def test_cau_tim_kiem_moi_lam_sach_slots_cu(skills):
+    """Khi AI trích xuất is_new_search=True sau một lượt xem chi tiết/đặt lịch,
+    slots cũ phải được làm sạch để hỏi lại dự án."""
+    state = _state(
+        "search-real-estate",
+        {"is_new_search": True},
+        slots={
+            "project_or_province": "Ecohome Phúc Lợi",
+            "bedrooms": 3,
+            "listing_ids": ["oh:QOAWHI"],
+        },
+    )
+    state["user_input"] = "Tìm mua nhà"
+    state["normalized_input"] = "Tìm mua nhà"
+
+    out = await manage_conversation(state, _ctx(skills, StubMCP()))
+    assert out["needs_clarification"] is True
+    assert "project_or_province" not in out["slots"]
+    assert "bedrooms" not in out["slots"]
+    assert "listing_ids" not in out["slots"]
+
+
+async def test_bo_sung_tieu_chi_giu_slots_cu(skills):
+    """Khi user nói thêm điều kiện (ví dụ '2 phòng ngủ'), slots dự án cũ vẫn được giữ."""
+    state = _state(
+        "search-real-estate",
+        {"bedrooms": 2},
+        slots={"project_or_province": "Ecohome Phúc Lợi"},
+    )
+    state["user_input"] = "2 phòng ngủ"
+    state["normalized_input"] = "2 phòng ngủ"
+
+    out = await manage_conversation(state, _ctx(skills, StubMCP()))
+    assert out["needs_clarification"] is False
+    assert out["slots"]["project_or_province"] == "Ecohome Phúc Lợi"
+    assert out["slots"]["bedrooms"] == 2
+
+
+async def test_us6_so_sanh_nhieu_can_co_slug_id(skills):
+    """Khi so sánh các căn có slug ID phức tạp kèm tên dự án cũ trong state,
+    listing_ids không bị xoá nhầm."""
+    ids = [
+        "vhm:saun1971-lien-ke-khu-anh-duong-vinhomes-ocean-park-3",
+        "vhm:saun1973-lien-ke-khu-anh-duong-vinhomes-ocean-park-3",
+        "vhm:saun525-lien-ke-khu-pho-bien-vinhomes-ocean-park-3",
+        "vhm:saun1510-tmdv-khu-the-venice-vinhomes-ocean-park-3",
+    ]
+    state = _state(
+        "compare-listings",
+        {"listing_ids": ids},
+        slots={"project_or_province": "Vinhomes Ocean Park 3"},
+    )
+    out = await manage_conversation(state, _ctx(skills, StubMCP()))
+    assert out["needs_clarification"] is False
+    assert out["slots"]["listing_ids"] == ids
+
+
+async def test_us2_consult_from_card_resolves_project_id(skills):
+    """Khi bấm Tư vấn 1:1 từ thẻ căn hộ, project_id được lấy trực tiếp từ card
+    mà không bị ghi đè bởi tên phân khu (Cọ Xanh, Sao Biển)."""
+    state = _state(
+        "consultation",
+        {
+            "project": "Cọ Xanh",
+            "listing_ids": ["vhm:saun2010-lien-ke-khu-co-xanh-vinhomes-ocean-park-2"],
+        },
+    )
+    state["tool_results"] = [
+        {
+            "name": "search_listings",
+            "result": [
+                {
+                    "id": "vhm:saun2010-lien-ke-khu-co-xanh-vinhomes-ocean-park-2",
+                    "title": "Liền kề, khu Cọ Xanh",
+                    "project_id": "vhm:vinhomes-ocean-park-2",
+                }
+            ],
+        }
+    ]
+    out = await manage_conversation(state, _ctx(skills, StubMCP()))
+    assert out["needs_clarification"] is False
+    assert out["slots"]["project_id"] == "vhm:vinhomes-ocean-park-2"
+
+
+

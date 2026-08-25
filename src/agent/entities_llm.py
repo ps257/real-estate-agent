@@ -59,6 +59,7 @@ class ExtractedEntities(BaseModel):
     max_area_m2: float | None = None
     listing_ids: list[str] | None = None
     wants_amenities: bool | None = None
+    is_new_search: bool | None = None
 
 
 _SYSTEM_PROMPT = """\
@@ -113,8 +114,10 @@ min_bedrooms=2; "tối đa 3 phòng" -> max_bedrooms=3).
 - listing_ids: mã căn khách nhắc tới (để xem chi tiết, bản đồ, hoặc so sánh). Chỉ trích khi câu có mã thật, không tự đặt mã, VÀ PHẢI GIỮ NGUYÊN toàn bộ mã (bao gồm cả tiền tố như oh:, vhm: nếu có).
 - wants_amenities: true khi khách muốn xem tiện ích/xung quanh dự án như trường học, \
 siêu thị, bệnh viện, công viên, thời gian di chuyển. Nếu không nhắc tới tiện ích thì null.
+- is_new_search: true khi khách muốn bắt đầu tìm kiếm mới, đổi sang dự án/căn khác hoặc reset tìm kiếm (ví dụ: "tìm mua nhà", "tìm căn hộ", "tìm dự án khác", "không xem căn này nữa tìm chỗ khác", "cho tôi tìm nhà khác"). Nếu khách đang bổ sung tiêu chí (giá, phòng ngủ) cho dự án đang xem thì để null hoặc false.
 
 LƯU Ý:
+- Tên phân khu (như "khu Sao Biển", "khu Cọ Xanh", "khu Ánh Dương", "The Venice", "The Rainbow", "The Origami", v.v.) là TÊN PHÂN KHU NỘI BỘ, KHÔNG phải tên dự án chính. Nếu câu chỉ có tên phân khu mà không nêu tên đại dự án (như Vinhomes Ocean Park 2), hãy để project=null.
 - "chung cư"/"căn hộ" là property_type, KHÔNG phải project. "Vinhomes" là \
 project, KHÔNG phải province.
 - KHÔNG suy ra project/province từ mã căn. "vhm:abc123" có tiền tố gợi ý dự án \
@@ -264,6 +267,9 @@ def sanitize(parsed: ExtractedEntities) -> dict:
 
     if parsed.wants_amenities is not None:
         out["wants_amenities"] = parsed.wants_amenities
+
+    if parsed.is_new_search is not None:
+        out["is_new_search"] = bool(parsed.is_new_search)
 
     return out
 

@@ -22,8 +22,11 @@ from agent.state import AgentState
 
 def _result(results: list[dict], name: str) -> Any:
     for r in results:
-        if r["name"] == name:
-            return r["result"]
+        if r.get("name") == name:
+            val = r.get("result")
+            if isinstance(val, dict) and "result" in val and len(val) == 1:
+                return val["result"]
+            return val
     return None
 
 
@@ -42,11 +45,18 @@ def _project_name(results: list[dict], fallback: str = "dự án") -> str:
 # Chữ ký chung: (results, state) -> (text, actions)
 
 def _c_us1_search(results: list[dict], state: AgentState) -> tuple[str, list[dict]]:
-    listings = (
+    raw_listings = (
         _result(results, "search_listings")
         or _result(results, "search_listings_by_province")
         or []
     )
+    if isinstance(raw_listings, dict) and "result" in raw_listings:
+        listings = raw_listings["result"]
+    elif isinstance(raw_listings, list):
+        listings = raw_listings
+    else:
+        listings = []
+
     if not isinstance(listings, list) or not listings:
         return "Dạ hiện em chưa tìm thấy kết quả phù hợp. Anh/chị thử đổi tiêu chí giúp em ạ?", []
 
@@ -72,10 +82,20 @@ def _c_us1_search(results: list[dict], state: AgentState) -> tuple[str, list[dic
 
     actions: list[dict] = [{"type": "cards", "items": listings}]
 
-    # MCP tool lỗi -> parse_tool_result trả str thay vì dict.
-    ctas = _result(results, "listing_cta_actions")
-    if isinstance(ctas, dict) and ctas.get("ctas"):
-        actions.append({"type": "cta", "items": ctas["ctas"]})
+    proj_name = fallback_proj_name or (listings[0].get("project_name") if listings and isinstance(listings[0], dict) else None)
+    overview_label = f"Xem tổng quan dự án {proj_name}" if proj_name else "Xem tổng quan dự án"
+    overview_val = f"Tổng quan dự án {proj_name}" if proj_name else "Xem tổng quan dự án"
+
+    actions.append({
+        "type": "cta",
+        "items": [
+            {
+                "label": overview_label,
+                "value": overview_val,
+                "intent": "US4_ANALYTICS",
+            }
+        ],
+    })
 
     text = f"Dạ em tìm thấy {len(listings)} kết quả phù hợp, đây là {min(len(listings), 10)} căn có giá tốt nhất ạ."
     return text, actions
@@ -474,9 +494,6 @@ def _c_us6_compare(
                         "display_text": f"So sánh chi tiết về không gian và nội thất giữa các căn: {titles_str}",
                         "intent": "US6_COMPARE",
                     },
-                    {"label": "Xem trên bản đồ", "intent": "US5_MAP"},
-                    {"label": "Đặt lịch tham quan", "intent": "US2_1_VISIT"},
-                    {"label": "Tư vấn mua nhà 1:1", "intent": "US2_2_CONSULT"},
                 ],
             },
         ]
@@ -500,9 +517,6 @@ def _c_us6_compare(
                         "display_text": f"So sánh chi tiết về tài chính và pháp lý giữa các căn: {titles_str}",
                         "intent": "US6_COMPARE",
                     },
-                    {"label": "Xem trên bản đồ", "intent": "US5_MAP"},
-                    {"label": "Đặt lịch tham quan", "intent": "US2_1_VISIT"},
-                    {"label": "Tư vấn mua nhà 1:1", "intent": "US2_2_CONSULT"},
                 ],
             },
         ]
@@ -550,8 +564,6 @@ def _c_us6_compare(
                     "display_text": f"So sánh chi tiết về không gian và nội thất giữa các căn: {titles_str}",
                     "intent": "US6_COMPARE",
                 },
-                {"label": "Xem trên bản đồ", "intent": "US5_MAP"},
-                {"label": "Đặt lịch tham quan", "intent": "US2_1_VISIT"},
             ],
         },
     ]

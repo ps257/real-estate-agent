@@ -106,6 +106,7 @@ async def _us1_search(run: _ToolRun, slots: dict, state: AgentState) -> dict | N
     candidates = resolved.get("candidates") or [] if isinstance(resolved, dict) else []
 
     if matched:
+        slots["project_id"] = resolved["project"]["id"]
         listings = await run.call(
             "search_listings",
             {"project_id": resolved["project"]["id"], "limit": 10, **filters},

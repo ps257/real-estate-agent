@@ -111,6 +111,16 @@ async def manage_conversation(state: AgentState, ctx: NodeContext) -> dict:
     slots: dict[str, Any] = dict(state.get("slots") or {})
     cot = list(state.get("cot", []))
 
+    # Nếu là US1_SEARCH và AI xác định đây là yêu cầu tìm kiếm mới (is_new_search) -> làm sạch slots cũ
+    is_search = (state.get("active_skill") == "search-real-estate" or state.get("intent") == "US1_SEARCH")
+    if is_search and entities.get("is_new_search") is True:
+        slots = {}
+        cot.append("conversation: AI phát hiện yêu cầu tìm kiếm mới (is_new_search) -> làm sạch slots cũ")
+
+    # US1 không dùng listing_ids của các lượt xem chi tiết/so sánh trước đó
+    if is_search:
+        slots.pop("listing_ids", None)
+
     allow = skill.tools if skill else []
     required = skill.required_slots if skill else []
 
@@ -122,33 +132,64 @@ async def manage_conversation(state: AgentState, ctx: NodeContext) -> dict:
     # 2) US1 dùng TÊN (dự án hoặc tỉnh), không cần id.
     name = entities.get("project") or entities.get("province")
     if name:
+        if slots.get("project_or_province") and slots.get("project_or_province") != name:
+            # Khách đổi dự án -> xoá project_id và listing_ids cũ (nếu lượt này không gửi listing_ids mới)
+            slots.pop("project_id", None)
+            if "listing_ids" not in entities:
+                slots.pop("listing_ids", None)
         slots["project_or_province"] = name
 
     # 3) 5 skill còn lại đòi project_id — phải resolve tên sang mã.
     clarify: dict[str, Any] | None = None
     if "project_id" in required:
-        # Khách nêu tên dự án mới trong lượt này -> resolve lại, đừng dùng id cũ.
-        term = entities.get("project")
-        if term or "project_id" not in slots:
-            term = term or slots.get("project_or_province")
-            if term:
-                project_id, candidates = await _resolve_project(ctx, allow, term)
-                if project_id:
-                    slots["project_id"] = project_id
-                    cot.append(f"conversation: resolve '{term}' -> {project_id}")
-                else:
-                    slots.pop("project_id", None)
-                    suggestions = _candidate_suggestions(candidates)
-                    cot.append(
-                        f"conversation: '{term}' chưa khớp chắc chắn "
-                        f"({len(candidates)} ứng viên)"
-                    )
-                    if suggestions:
-                        clarify = {
-                            "prompt": f"Dạ có nhiều dự án khớp với \"{term}\". "
-                                      "Anh/chị chọn giúp em dự án nào ạ?",
-                            "suggestions": suggestions,
-                        }
+        # 1. Nếu có listing_id trong entities/slots, thử tìm project_id từ listing trước (trường hợp click CTA từ Card)
+        listing_project_id = None
+        if "project_id" not in slots or "listing_ids" in entities:
+            lids = entities.get("listing_ids") or []
+            if lids and isinstance(lids, list):
+                lid = lids[0]
+                for res in reversed(state.get("tool_results", [])):
+                    if not isinstance(res, dict):
+                        continue
+                    data = res.get("result") or res.get("data")
+                    if isinstance(data, list):
+                        for item in data:
+                            if isinstance(item, dict) and item.get("id") == lid and item.get("project_id"):
+                                listing_project_id = item["project_id"]
+                                break
+                    elif isinstance(data, dict):
+                        if data.get("id") == lid and data.get("project_id"):
+                            listing_project_id = data["project_id"]
+                            break
+                    if listing_project_id:
+                        break
+
+        if listing_project_id:
+            slots["project_id"] = listing_project_id
+            cot.append(f"conversation: map card listing '{lids[0]}' -> project_id '{listing_project_id}'")
+        else:
+            # 2. Khách nêu tên dự án mới hoặc chưa có project_id -> resolve
+            term = entities.get("project")
+            if term or "project_id" not in slots:
+                term = term or slots.get("project_or_province")
+                if term:
+                    project_id, candidates = await _resolve_project(ctx, allow, term)
+                    if project_id:
+                        slots["project_id"] = project_id
+                        cot.append(f"conversation: resolve '{term}' -> {project_id}")
+                    else:
+                        slots.pop("project_id", None)
+                        suggestions = _candidate_suggestions(candidates)
+                        cot.append(
+                            f"conversation: '{term}' chưa khớp chắc chắn "
+                            f"({len(candidates)} ứng viên)"
+                        )
+                        if suggestions:
+                            clarify = {
+                                "prompt": f'Dạ có nhiều dự án khớp với "{term}". '
+                                          "Anh/chị chọn giúp em dự án nào ạ?",
+                                "suggestions": suggestions,
+                            }
 
     missing = [s for s in required if s not in slots]
     needs = bool(missing)

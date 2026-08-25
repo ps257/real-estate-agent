@@ -57,14 +57,17 @@ def _listing_ids_from_state(text: str, state: AgentState) -> list[str]:
 
 def _project_from_text(text: str) -> str | None:
     """Fallback bảo thủ cho tên dự án rõ ràng khi Entity LLM không dùng được."""
-    match = re.search(r"\bvinhomes\b", text, re.IGNORECASE)
+    clean_text = re.sub(r"\([^)]*\)", " ", text)
+    clean_text = _LISTING_ID_RE.sub(" ", clean_text)
+
+    match = re.search(r"\bvinhomes\b", clean_text, re.IGNORECASE)
     if match:
-        tail = text[match.start():]
+        tail = clean_text[match.start():]
     else:
-        labelled = re.search(r"\bdự\s+án\s+", text, re.IGNORECASE)
+        labelled = re.search(r"\bdự\s+án\s+", clean_text, re.IGNORECASE)
         if not labelled:
             return None
-        tail = text[labelled.end():]
+        tail = clean_text[labelled.end():]
 
     tail = _PROJECT_STOP_RE.split(tail, maxsplit=1)[0]
     tail = re.sub(r"[?!,.;:]+$", "", tail).strip()
