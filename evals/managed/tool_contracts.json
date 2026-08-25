@@ -1,0 +1,24 @@
+{
+  "generated_from": "../real-estate-mcp FastMCP mcp.list_tools(run_middleware=False)",
+  "schema_version": 1,
+  "tools": {
+    "calculate_commute_matrix": {"required": ["origins", "destinations"], "properties": {"origins": "array", "destinations": "array", "vehicle": "string"}},
+    "compare_listings": {"required": ["listing_ids"], "properties": {"listing_ids": "string[]"}},
+    "compare_nearby_amenities": {"required": ["listing_ids"], "properties": {"listing_ids": "string[]"}},
+    "get_listing": {"required": ["listing_id"], "properties": {"listing_id": "string"}},
+    "get_listings_geo_bounds": {"required": ["listing_ids"], "properties": {"listing_ids": "string[]"}},
+    "list_project_buildings": {"required": ["project_id"], "properties": {"project_id": "string", "level": "string?", "limit": "integer"}},
+    "list_project_listings": {"required": ["project_id"], "properties": {"project_id": "string", "limit": "integer", "offset": "integer"}},
+    "list_provinces": {"required": [], "properties": {}},
+    "listing_cta_actions": {"required": ["listing_id"], "properties": {"listing_id": "string"}},
+    "map_listings": {"required": [], "properties": {"bedrooms": "integer?", "include_amenities": "boolean", "limit": "integer", "listing_ids": "string[]?", "max_bedrooms": "integer?", "max_price_vnd": "integer?", "min_bedrooms": "integer?", "min_price_vnd": "integer?", "project_id": "string?", "property_type": "string?"}},
+    "project_overview": {"required": ["project_id"], "properties": {"project_id": "string"}},
+    "resolve_project": {"required": ["text"], "properties": {"text": "string"}},
+    "search_listings": {"required": [], "properties": {"bedrooms": "integer?", "building_id": "string?", "limit": "integer", "max_area_m2": "number?", "max_bedrooms": "integer?", "max_price_vnd": "integer?", "min_area_m2": "number?", "min_bedrooms": "integer?", "min_price_vnd": "integer?", "project_id": "string?", "property_type": "string?"}},
+    "search_listings_by_province": {"required": ["province"], "properties": {"province": "string", "bedrooms": "integer?", "limit": "integer", "max_area_m2": "number?", "max_bedrooms": "integer?", "max_price_vnd": "integer?", "min_area_m2": "number?", "min_bedrooms": "integer?", "min_price_vnd": "integer?", "property_type": "string?"}},
+    "search_projects": {"required": [], "properties": {"limit": "integer", "province": "string?", "query": "string?"}},
+    "start_consultation": {"required": ["project_id"], "properties": {"project_id": "string", "is_authenticated": "boolean"}},
+    "start_visit_booking": {"required": ["project_id"], "properties": {"project_id": "string", "is_authenticated": "boolean"}},
+    "submit_booking": {"required": ["kind", "project_id", "payload"], "properties": {"kind": "string", "project_id": "string", "payload": "object", "is_authenticated": "boolean"}}
+  }
+}
