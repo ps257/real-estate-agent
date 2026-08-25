@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import uuid
 from pathlib import Path
 from typing import Any
@@ -259,6 +260,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     args = parse_args()
     telemetry = get_telemetry()
     if not telemetry.enabled or telemetry.client is None:
