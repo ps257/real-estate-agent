@@ -47,6 +47,8 @@ def _c_us1_search(results: list[dict], state: AgentState) -> tuple[str, list[dic
         or _result(results, "search_listings_by_province")
         or []
     )
+    if isinstance(listings, dict) and "result" in listings:
+        listings = listings["result"]
     if not isinstance(listings, list) or not listings:
         return "Dạ hiện em chưa tìm thấy kết quả phù hợp. Anh/chị thử đổi tiêu chí giúp em ạ?", []
 

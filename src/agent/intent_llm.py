@@ -89,13 +89,11 @@ ra khách đang nói về dự án/căn nào đã nhắc trước đó.
 trước nếu tin nhắn mới rõ ràng hướng khác.
 3. Phân biệt kỹ các cặp dễ nhầm:
    - Hỏi THÔNG TIN dự án (chính sách, pháp lý, tiện ích, quy định) → US3_POLICY.
-   - Hỏi SỐ LIỆU tổng hợp (bao nhiêu căn, giá trung bình, phân bố loại hình) \
-→ US4_ANALYTICS.
-   - Nhu cầu TÌM MUA NHÀ, hỏi DANH SÁCH căn, hoặc đưa ra tiêu chí (giá, phòng ngủ) → US1_SEARCH.
+   - Hỏi SỐ LIỆU tổng hợp (bao nhiêu căn, giá trung bình, phân bố loại hình) → US4_ANALYTICS.
+   - Nhu cầu TÌM MUA NHÀ, hỏi DANH SÁCH căn, đưa ra tiêu chí (giá, phòng ngủ), hoặc CHỈ NHẮC TÊN DỰ ÁN/TỈNH mà không kèm động từ (ví dụ: "Vinhomes Ocean Park", "ở Hà Nội") → US1_SEARCH.
    - CHỦ ĐỘNG yêu cầu Đặt lịch ĐI XEM tận nơi → US2_1_VISIT. CHỦ ĐỘNG yêu cầu xin người TƯ VẤN → US2_2_CONSULT.
    - So sánh từ 2 căn trở lên → US6_COMPARE. Xem vị trí trên bản đồ → US5_MAP.
-4. Nếu vẫn không khớp bất kỳ nhãn nghiệp vụ nào → {fallback}. Không đoán thành \
-US1_SEARCH chỉ vì yêu cầu không rõ.
+4. Nếu vẫn không khớp bất kỳ nhãn nghiệp vụ nào → {fallback}. Không đoán thành US1_SEARCH chỉ vì yêu cầu không rõ.
 
 Trả về intent (đúng một mã trong danh sách trên), confidence (0.0-1.0), và \
 reason ngắn gọn bằng tiếng Việt (tối đa 15 từ)."""

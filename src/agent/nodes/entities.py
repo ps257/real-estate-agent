@@ -89,7 +89,7 @@ def _rule_entities(text: str, state: AgentState) -> dict:
         entities["bedrooms"] = int(bedrooms.group(1))
 
     lowered = text.casefold()
-    if any(word in lowered for word in ("quán ăn", "nhà hàng", "trường học", "bệnh viện", "siêu thị")):
+    if any(word in lowered for word in ("quán ăn", "nhà hàng", "trường học", "bệnh viện", "siêu thị", "tiện ích")):
         entities["wants_amenities"] = True
         entities["include_amenities"] = True
     return entities
