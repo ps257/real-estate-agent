@@ -476,9 +476,6 @@ def _c_us6_compare(
                         "display_text": f"So sánh chi tiết về không gian và nội thất giữa các căn: {titles_str}",
                         "intent": "US6_COMPARE",
                     },
-                    {"label": "Xem trên bản đồ", "intent": "US5_MAP"},
-                    {"label": "Đặt lịch tham quan", "intent": "US2_1_VISIT"},
-                    {"label": "Tư vấn mua nhà 1:1", "intent": "US2_2_CONSULT"},
                 ],
             },
         ]
@@ -502,9 +499,6 @@ def _c_us6_compare(
                         "display_text": f"So sánh chi tiết về tài chính và pháp lý giữa các căn: {titles_str}",
                         "intent": "US6_COMPARE",
                     },
-                    {"label": "Xem trên bản đồ", "intent": "US5_MAP"},
-                    {"label": "Đặt lịch tham quan", "intent": "US2_1_VISIT"},
-                    {"label": "Tư vấn mua nhà 1:1", "intent": "US2_2_CONSULT"},
                 ],
             },
         ]
@@ -552,8 +546,6 @@ def _c_us6_compare(
                     "display_text": f"So sánh chi tiết về không gian và nội thất giữa các căn: {titles_str}",
                     "intent": "US6_COMPARE",
                 },
-                {"label": "Xem trên bản đồ", "intent": "US5_MAP"},
-                {"label": "Đặt lịch tham quan", "intent": "US2_1_VISIT"},
             ],
         },
     ]
