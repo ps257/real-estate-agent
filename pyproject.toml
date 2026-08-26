@@ -1,17 +1,17 @@
 [project]
 name = "real-estate-agent"
 version = "0.1.0"
-description = "Real Estate Market Intelligence Multi-Agent (LangGraph + MCP) — student scaffold"
+description = "Real Estate Market Intelligence Multi-Agent (LangGraph + MCP) â€” student scaffold"
 readme = "README.md"
 requires-python = ">=3.11"
-# Phiên bản theo LangChain/LangGraph 1.x LTS (semver: cho phép minor trong cùng major).
-# Xem .claude/skills/langchain-dependencies để biết chính sách versioning.
+# PhiÃªn báº£n theo LangChain/LangGraph 1.x LTS (semver: cho phÃ©p minor trong cÃ¹ng major).
+# Xem .claude/skills/langchain-dependencies Ä‘á»ƒ biáº¿t chÃ­nh sÃ¡ch versioning.
 dependencies = [
     "langgraph>=1.2,<2.0",
     "langchain>=1.0,<2.0",
     "langchain-core>=1.5,<2.0",
     "langchain-mcp-adapters>=0.3,<1.0",
-    # mcp SDK: giữ ở 1.x vì langchain-mcp-adapters 0.3.x chưa hỗ trợ mcp 2.x.
+    # mcp SDK: giá»¯ á»Ÿ 1.x vÃ¬ langchain-mcp-adapters 0.3.x chÆ°a há»— trá»£ mcp 2.x.
     "mcp>=1.24,<2.0",
     "langsmith>=0.3.0",
     "langfuse>=4.14.4,<5",
@@ -25,10 +25,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Provider LLM — cài riêng cái bạn dùng (mặc định OpenAI).
-# `openai` là SDK chính thức, dùng trực tiếp cho guardrail classifier
-# (structured outputs + timeout per-request). `langchain-openai` dành cho các
-# node LangGraph sắp làm (intent / entities / compose).
+# Provider LLM â€” cÃ i riÃªng cÃ¡i báº¡n dÃ¹ng (máº·c Ä‘á»‹nh OpenAI).
+# `openai` lÃ  SDK chÃ­nh thá»©c, dÃ¹ng trá»±c tiáº¿p cho guardrail classifier
+# (structured outputs + timeout per-request). `langchain-openai` dÃ nh cho cÃ¡c
+# node LangGraph sáº¯p lÃ m (intent / entities / compose).
 llm = ["langchain-openai>=0.3,<1.0", "openai>=1.99"]
 dev = ["pytest>=8.3", "pytest-asyncio>=1.0", "httpx>=0.28"]
 
@@ -43,6 +43,3 @@ packages = ["src/agent"]
 pythonpath = ["src"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-
-[tool.vercel]
-entrypoint = "index.py"
