@@ -49,6 +49,7 @@ class ExtractedEntities(BaseModel):
 
     project: str | None = None
     province: str | None = None
+    district: str | None = None
     property_type: str | None = None
     bedrooms: int | None = None
     min_bedrooms: int | None = None
@@ -82,6 +83,7 @@ khách chỉ nói tên rút gọn ("Vinhomes") thì vẫn trích đúng phần k
 tự bổ sung.
 - province: tỉnh/thành, dùng tên hành chính chuẩn — "Hồ Chí Minh" (không phải \
 "Sài Gòn"/"TPHCM"), "Hà Nội", "Đà Nẵng".
+- district: quận/huyện nếu khách có nhắc tới (ví dụ: "Hoàng Mai", "Gia Lâm", "Nam Từ Liêm", "Cầu Giấy", "Quận 1", "Thủ Đức", "Bình Thạnh"...). Nếu khách không nói thì để null.
 - property_type: PHẢI là một trong đúng 8 mã sau (tiếng Việt không dấu, lấy từ \
 dữ liệu thật của MCP — mã ngoài danh sách này sẽ bị từ chối):
     can_ho              — căn hộ, chung cư
@@ -196,7 +198,7 @@ def sanitize(parsed: ExtractedEntities) -> dict:
     """
     out: dict = {}
 
-    for key in ("project", "province"):
+    for key in ("project", "province", "district"):
         value = getattr(parsed, key)
         if isinstance(value, str) and value.strip():
             out[key] = value.strip()

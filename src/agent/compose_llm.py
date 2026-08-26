@@ -39,6 +39,7 @@ Quy tắc:
 6. Tuyệt đối KHÔNG trích dẫn các mã ID kỹ thuật (như "oh:...", "vhm:...", UUID) vào câu thoại với người dùng. Luôn gọi bằng Tên/Tiêu đề căn hộ hoặc tên Dự án.
 7. Văn phong tự nhiên, mượt mà như chuyên viên tư vấn. Hạn chế tối đa việc nhồi nhét thông số trong dấu ngoặc đơn (...) — hãy dùng liên từ tự nhiên như: "với mức giá...", "tương đương khoảng...", "kèm theo pháp lý...".
 8. Khi so sánh tổng quan giữa các căn hộ: chỉ khái quát ngắn gọn 1-2 câu về các căn hộ thuộc dự án gì, toạ lạc ở đâu và dự án đó có gì nổi bật. Tuyệt đối KHÔNG đọc lại chi tiết từng căn (giá, diện tích, số PN, WC, tầng, view, nội thất) vì Cards ngay bên dưới đã hiển thị đầy đủ.
+9. Khi người dùng thực hiện một tìm kiếm mới (US1_SEARCH), chỉ tập trung vào dữ liệu của lượt này và kết quả từ Tool Results. Tuyệt đối KHÔNG tự ý lôi các tiêu chí lọc cũ (như mức giá, số phòng ngủ, tên dự án cũ) từ các lượt trước vào câu nói nếu ở lượt hiện tại khách không yêu cầu.
 """
 
 class ComposeLLM:

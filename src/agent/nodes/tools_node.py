@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 # Slot chuyển thẳng thành tham số lọc của search_listings*. Tên slot == tên
 # tham số MCP (xem entities_llm.ExtractedEntities), nên không phải map lại.
 _SEARCH_FILTERS = (
+    "district",
     "property_type",
     "bedrooms",
     "min_bedrooms",
@@ -107,9 +108,10 @@ async def _us1_search(run: _ToolRun, slots: dict, state: AgentState) -> dict | N
 
     if matched:
         slots["project_id"] = resolved["project"]["id"]
+        project_filters = {k: v for k, v in filters.items() if k != "district"}
         listings = await run.call(
             "search_listings",
-            {"project_id": resolved["project"]["id"], "limit": 10, **filters},
+            {"project_id": resolved["project"]["id"], "limit": 10, **project_filters},
         )
     elif candidates:
         # Tên mơ hồ ("Vinhomes" khớp 5 dự án). search-real-estate.md quy định:

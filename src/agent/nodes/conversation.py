@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 # Entity chuyển thẳng sang slot làm điều kiện lọc — tên trùng tham số MCP.
 _FILTER_KEYS = (
+    "district",
     "property_type",
     "bedrooms",
     "min_bedrooms",
