@@ -145,19 +145,23 @@ class MCPClient:
 
             result: Any = None
             captured_exception: Exception | None = None
-            try:
-                async with create_session(self._config.server_spec()) as session:
-                    await session.initialize()
-                    result = await session.call_tool(
-                        name,
-                        args,
-                        meta=current_w3c_carrier() or None,
-                    )
-            except Exception as exc:  # noqa: BLE001 - mirrors adapter transport handling
-                captured_exception = exc
+            max_retries = 2
+            for attempt in range(max_retries + 1):
+                try:
+                    async with create_session(self._config.server_spec()) as session:
+                        await session.initialize()
+                        result = await session.call_tool(
+                            name,
+                            args,
+                            meta=current_w3c_carrier() or None,
+                        )
+                        captured_exception = None
+                        break
+                except Exception as exc:  # noqa: BLE001
+                    captured_exception = exc
+                    if attempt < max_retries:
+                        await asyncio.sleep(0.8 * (attempt + 1))
 
-            # Re-raise outside the adapter context.  Some MCP transports suppress an
-            # exception while disconnecting; MultiServerMCPClient uses the same guard.
             if captured_exception is not None:
                 observation.score("tool_success", False)
                 observation.update(
