@@ -37,7 +37,8 @@ _REPEAT_CHAR = re.compile(r"([^\W\d_])\1{2,}")
 # tiện ích quanh dự án, nhờ vậy "quán ăn gần Vinhomes Ocean Park" không bị chặn
 # bởi rule đồ ăn độc lập ở dưới.
 _CLEAR_IN_SCOPE = re.compile(
-    r"(?:bất động sản|bđs|\bbds\b|\bcăn\b|căn hộ|chung cư|nhà đất|dự án|vinhomes|"
+    r"(?:bất động sản|bđs|\bbds\b|\bcăn\b|căn hộ|chung cư|nhà đất|dự án|vinhomes?|"
+    r"ocean\s*park|smart\s*city|grand\s*park|times\s*city|royal\s*city|masteri|imperia|ecopark|"
     r"\blisting\b|\b[a-z]{1,10}(?::|_)[a-z0-9_-]+\b|so sánh|đối chiếu|"
     r"phòng ngủ|mua nhà|thuê (?:nhà|căn)|giá (?:rao|bán)|"
     r"đặt lịch tham quan|tư vấn mua nhà|xem bản đồ|tiện ích|chính sách|pháp lý|"

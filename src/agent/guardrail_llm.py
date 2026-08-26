@@ -175,28 +175,37 @@ class LLMGuardrail:
 
         try:
             client = self._ensure()
-            response = await client.with_options(
-                timeout=self._settings.guardrail_llm_timeout,
-                max_retries=0,  # Guardrail nằm trên đường đi của request — không retry.
-            ).responses.parse(
-                model=self._settings.guardrail_llm_model,
-                input=[
-                    {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user", "content": text},
-                ],
-                text_format=GuardrailVerdict,
-                max_output_tokens=256,  # Output là 3 field ngắn.
-                # Model dòng gpt-5.x là reasoning model. Nếu latency chưa đạt,
-                # chỗ này là nút vặn đầu tiên (tham số `reasoning`) — kiểm tra
-                # giá trị hợp lệ trong docs trước khi bật, sai là 400.
-                **get_telemetry().openai_trace_kwargs("llm.guardrail"),
-            )
+            messages = [
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": text},
+            ]
+            try:
+                response = await client.with_options(
+                    timeout=self._settings.guardrail_llm_timeout,
+                    max_retries=0,
+                ).beta.chat.completions.parse(
+                    model=self._settings.guardrail_llm_model,
+                    messages=messages,
+                    response_format=GuardrailVerdict,
+                    max_tokens=256,
+                    **get_telemetry().openai_trace_kwargs("llm.guardrail"),
+                )
+                verdict = response.choices[0].message.parsed
+            except Exception:
+                response = await client.with_options(
+                    timeout=self._settings.guardrail_llm_timeout,
+                    max_retries=0,
+                ).responses.parse(
+                    model=self._settings.guardrail_llm_model,
+                    input=messages,
+                    text_format=GuardrailVerdict,
+                    max_output_tokens=256,
+                    **get_telemetry().openai_trace_kwargs("llm.guardrail"),
+                )
+                verdict = getattr(response, "output_parsed", None)
         except Exception as exc:  # noqa: BLE001 — fail-open là chủ ý, xem docstring.
             logger.warning("guardrail LLM lỗi, dùng fallback an toàn: %s: %s", type(exc).__name__, exc)
             return None
-
-        # Model từ chối vì lý do an toàn -> output_parsed là None.
-        verdict = getattr(response, "output_parsed", None)
         if verdict is None:
             logger.warning("guardrail LLM không trả verdict (refusal hoặc parse hỏng)")
         return verdict

@@ -160,16 +160,30 @@ class IntentClassifier:
 
         try:
             client = self._ensure()
-            response = await client.with_options(
-                timeout=self._settings.intent_llm_timeout,
-                max_retries=0,  # Nằm trên đường đi của request — không retry.
-            ).responses.parse(
-                model=self._settings.intent_llm_model,
-                input=messages,
-                text_format=IntentVerdict,
-                max_output_tokens=256,
-                **get_telemetry().openai_trace_kwargs("llm.intent"),
-            )
+            try:
+                response = await client.with_options(
+                    timeout=self._settings.intent_llm_timeout,
+                    max_retries=0,
+                ).beta.chat.completions.parse(
+                    model=self._settings.intent_llm_model,
+                    messages=messages,
+                    response_format=IntentVerdict,
+                    max_tokens=256,
+                    **get_telemetry().openai_trace_kwargs("llm.intent"),
+                )
+                verdict = response.choices[0].message.parsed
+            except Exception:
+                response = await client.with_options(
+                    timeout=self._settings.intent_llm_timeout,
+                    max_retries=0,
+                ).responses.parse(
+                    model=self._settings.intent_llm_model,
+                    input=messages,
+                    text_format=IntentVerdict,
+                    max_output_tokens=256,
+                    **get_telemetry().openai_trace_kwargs("llm.intent"),
+                )
+                verdict = getattr(response, "output_parsed", None)
         except Exception as exc:  # noqa: BLE001 — fallback là chủ ý, xem docstring.
             logger.warning(
                 "intent LLM lỗi, fallback %s: %s",
@@ -177,8 +191,6 @@ class IntentClassifier:
                 type(exc).__name__,
             )
             return None
-
-        verdict = getattr(response, "output_parsed", None)
         if verdict is None:
             logger.warning("intent LLM không trả verdict (refusal hoặc parse hỏng)")
             return None
