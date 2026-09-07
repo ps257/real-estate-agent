@@ -13,10 +13,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from typing import Any, Protocol, runtime_checkable
 
 from agent.config import MCPConfig, get_settings
 from agent.telemetry import current_w3c_carrier, get_telemetry, redact
+
+logger = logging.getLogger(__name__)
 
 
 def parse_tool_result(raw: Any) -> Any:
@@ -111,10 +114,35 @@ class MCPClient:
             # Dựng vào biến local và chỉ publish sau khi get_tools hoàn tất. Nếu
             # publish client trước await, request đồng thời có thể thấy tools={}
             # rồi báo sai "tool không tồn tại".
-            client = MultiServerMCPClient({"real_estate": self._config.server_spec()})
-            tools = await client.get_tools()
-            self._tools = {t.name: t for t in tools}
-            self._client = client
+            # Với HTTP transport, thêm retry chờ MCP cold start (Render free tier).
+            max_init_retries = 8 if self._config.transport == "http" else 1
+            retry_delay = 2.0
+            last_err: Exception | None = None
+
+            for attempt in range(max_init_retries):
+                try:
+                    client = MultiServerMCPClient({"real_estate": self._config.server_spec()})
+                    tools = await client.get_tools()
+                    self._tools = {t.name: t for t in tools}
+                    self._client = client
+                    last_err = None
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    last_err = exc
+                    if attempt < max_init_retries - 1:
+                        logger.warning(
+                            "MCP server chua san sang (dang khoi dong?), thu lai sau %.1fs (lan %d/%d): %s: %s",
+                            retry_delay,
+                            attempt + 1,
+                            max_init_retries,
+                            type(exc).__name__,
+                            exc,
+                        )
+                        await asyncio.sleep(retry_delay)
+                        retry_delay = min(retry_delay * 1.5, 6.0)
+
+            if last_err is not None:
+                raise last_err
 
     async def list_tools(self) -> list[str]:
         """Tên các tool server MCP cung cấp."""
@@ -145,7 +173,8 @@ class MCPClient:
 
             result: Any = None
             captured_exception: Exception | None = None
-            max_retries = 2
+            max_retries = 8 if self._config.transport == "http" else 2
+            retry_delay = 2.0
             for attempt in range(max_retries + 1):
                 try:
                     async with create_session(self._config.server_spec()) as session:
@@ -160,7 +189,17 @@ class MCPClient:
                 except Exception as exc:  # noqa: BLE001
                     captured_exception = exc
                     if attempt < max_retries:
-                        await asyncio.sleep(0.8 * (attempt + 1))
+                        logger.warning(
+                            "Goi MCP tool %r that bai (lan %d/%d), thu lai sau %.1fs: %s: %s",
+                            name,
+                            attempt + 1,
+                            max_retries + 1,
+                            retry_delay,
+                            type(exc).__name__,
+                            exc,
+                        )
+                        await asyncio.sleep(retry_delay)
+                        retry_delay = min(retry_delay * 1.5, 6.0)
 
             if captured_exception is not None:
                 observation.score("tool_success", False)
